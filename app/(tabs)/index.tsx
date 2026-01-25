@@ -66,7 +66,7 @@ export default function DashboardScreen() {
     { title: 'Grades', icon: 'chart.bar.fill', route: '/grades', color: successColor },
     { title: 'Attendance', icon: 'calendar', route: '/attendance', color: warningColor },
     { title: 'Homework', icon: 'book.fill', route: '/homework', color: errorColor },
-    { title: 'Subjects', icon: 'book.fill', route: '/subjects', color: primaryColor },
+    { title: 'Assignments', icon: 'book.fill', route: '/assignments', color: primaryColor },
   ]
 
   return (
@@ -160,8 +160,8 @@ export default function DashboardScreen() {
                           announcement.type === 'ALERT'
                             ? errorColor
                             : announcement.type === 'EVENT'
-                            ? warningColor
-                            : successColor,
+                              ? warningColor
+                              : successColor,
                       },
                     ]}
                   >
