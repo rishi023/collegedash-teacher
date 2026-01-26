@@ -1,13 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(npx expo install:*)",
-      "Bash(npm install:*)",
-      "Bash(npx tsc:*)",
-      "Bash(npm run lint:*)",
-      "WebFetch(domain:multi-prod-api.studyaid.in)",
-      "WebFetch(domain:collegedash.in)",
-      "WebSearch"
-    ]
+    "allow": ["Bash(npx tsc:*)", "Bash(npm run lint:*)"]
   }
 }

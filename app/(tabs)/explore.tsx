@@ -98,10 +98,10 @@ export default function MoreScreen() {
       route: '/attendance',
     },
     {
-      title: 'Subjects',
+      title: 'Assignments',
       icon: 'book.fill',
       color: '#8b5cf6',
-      route: '/subjects',
+      route: '/assignments',
     },
     {
       title: 'Homework',
