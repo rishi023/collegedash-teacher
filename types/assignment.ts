@@ -90,3 +90,29 @@ export interface HomeworkPayload {
   published: boolean
   subjectHomeworkList: HomeworkItem[]
 }
+
+// Attendance types
+export interface StudentAttendance {
+  studentId: string
+  admissionNumber: string
+  rollNumber: number
+  studentName: string
+  fatherName: string
+  contactNumber: string
+  present: boolean
+  remarks: string | null
+  date: string | null
+}
+
+export interface AttendancePayload {
+  batchId: string
+  courseId: string
+  courseName: string
+  year: string
+  section: string
+  classId: string
+  grade: string
+  date: string
+  id: string | null
+  studentAttendance: StudentAttendance[]
+}
