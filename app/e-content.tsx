@@ -1,38 +1,26 @@
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
-import { ChapterForm, ContentForm, ContentTreeView, SectionForm } from '@/components/econtent'
-import { useAuth } from '@/contexts/AuthContext'
+// Commented out - complex components not needed for simple view
+// import { ChapterForm, ContentForm, ContentTreeView, SectionForm } from '@/components/econtent'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import {
-  Chapter,
-  ContentSection,
   ContentStatus,
-  CourseOption,
+  ContentType,
   EContent,
-  SubjectByCourseOption,
-  YearOption,
   getAllEContent,
-  getChapters,
-  getCourseYears,
-  getCourses,
-  getSubjectsByCourseYear,
-  getFileIcon,
-  getFileColor,
-  getFileTypeLabel,
-  getContentTypeIcon,
-  getContentTypeColor,
-  getContentTypeLabel,
-  formatFileSize,
-  deleteEContent,
+  uploadEContent,
+  SubjectByCourseOption,
 } from '@/services/eContentApi'
+import { api } from '@/services/axios'
+import { storage } from '@/services/storage'
+import { Course, Year } from '@/types/assignment'
+import * as DocumentPicker from 'expo-document-picker'
 import * as Linking from 'expo-linking'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -41,13 +29,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-type ViewMode = 'tree' | 'list'
-
-const ITEMS_PER_PAGE = 10
-
 export default function EContentScreen() {
-  const { user } = useAuth()
-
   // Theme colors
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -55,258 +37,285 @@ export default function EContentScreen() {
   const textColor = useThemeColor({}, 'text')
   const mutedColor = useThemeColor({}, 'muted')
   const borderColor = useThemeColor({}, 'border')
-  const inputBackground = useThemeColor({}, 'inputBackground')
-  const inputBorder = useThemeColor({}, 'inputBorder')
   const errorColor = useThemeColor({}, 'error')
   const successColor = useThemeColor({}, 'success')
-  const warningColor = useThemeColor({}, 'warning')
 
-  // View mode
-  const [viewMode, setViewMode] = useState<ViewMode>('tree')
+  // Loading states
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [fetching, setFetching] = useState(false)
 
-  // Data state
-  const [chapters, setChapters] = useState<Chapter[]>([])
-  const [contentList, setContentList] = useState<EContent[]>([])
-  const [totalElements, setTotalElements] = useState(0)
-  const [currentPage, setCurrentPage] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  // Data
+  const [courses, setCourses] = useState<Course[]>([])
+  const [selectedCourseIndex, setSelectedCourseIndex] = useState(0)
+  const [selectedYearIndex, setSelectedYearIndex] = useState(0)
 
-  // Filter state - using single objects to prevent desync between id and name
-  type SelectOption = { id: string; name: string } | null
-  const [courses, setCourses] = useState<CourseOption[]>([])
-  const [years, setYears] = useState<YearOption[]>([])
+  // Subjects for upload
   const [subjects, setSubjects] = useState<SubjectByCourseOption[]>([])
-  const [selectedCourse, setSelectedCourse] = useState<SelectOption>(null)
-  const [selectedYear, setSelectedYear] = useState<SelectOption>(null)
-  const [selectedSubject, setSelectedSubject] = useState<SelectOption>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedSubjectIndex, setSelectedSubjectIndex] = useState(0)
+  const [loadingSubjects, setLoadingSubjects] = useState(false)
 
-  // Picker modals
-  const [showCoursePicker, setShowCoursePicker] = useState(false)
-  const [showYearPicker, setShowYearPicker] = useState(false)
-  const [showSubjectPicker, setShowSubjectPicker] = useState(false)
+  // Content data
+  const [contentList, setContentList] = useState<EContent[]>([])
 
-  // Form modals
-  const [showChapterForm, setShowChapterForm] = useState(false)
-  const [showSectionForm, setShowSectionForm] = useState(false)
-  const [showContentForm, setShowContentForm] = useState(false)
+  // Upload form
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [selectedFile, setSelectedFile] = useState<{
+    uri: string
+    name: string
+    type: string
+  } | null>(null)
 
-  // Editing state
-  const [editingChapter, setEditingChapter] = useState<Chapter | null>(null)
-  const [editingSection, setEditingSection] = useState<ContentSection | null>(null)
-  const [editingContent, setEditingContent] = useState<EContent | null>(null)
-  const [selectedChapterForSection, setSelectedChapterForSection] = useState<Chapter | null>(null)
-  const [selectedChapterForContent, setSelectedChapterForContent] = useState<Chapter | null>(null)
-  const [selectedSectionForContent, setSelectedSectionForContent] = useState<ContentSection | null>(
-    null,
-  )
+  // Modals
+  const [showCourseModal, setShowCourseModal] = useState(false)
+  const [showYearModal, setShowYearModal] = useState(false)
+  const [showSubjectModal, setShowSubjectModal] = useState(false)
 
-  // Debounce search input
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
-
-  // Fetch courses on mount
-  useEffect(() => {
-    fetchCourses()
+    init()
   }, [])
 
-  // Fetch content when filters change
-  useEffect(() => {
-    if (viewMode === 'list') {
-      setCurrentPage(0)
-      fetchContent()
-    }
-  }, [selectedCourse, selectedYear, selectedSubject, debouncedSearch, viewMode])
-
-  // Fetch chapters when subject changes (for tree view)
-  useEffect(() => {
-    if (viewMode === 'tree') {
-      if (selectedSubject?.id) {
-        fetchChapters()
-      } else {
-        // No subject selected, stop loading and clear chapters
-        setChapters([])
-        setIsLoading(false)
-      }
-    }
-  }, [selectedSubject, viewMode])
-
-  // Fetch years when course changes
-  useEffect(() => {
-    if (selectedCourse?.id) {
-      fetchYears(selectedCourse.id)
-    } else {
-      setYears([])
-      setSelectedYear(null)
-      setSubjects([])
-      setSelectedSubject(null)
-    }
-  }, [selectedCourse])
-
-  // Fetch subjects when year changes
-  useEffect(() => {
-    if (selectedCourse?.id && selectedYear?.name) {
-      fetchSubjects(selectedCourse.id, selectedYear.name)
-    } else {
-      setSubjects([])
-      setSelectedSubject(null)
-    }
-  }, [selectedCourse, selectedYear])
-
-  const fetchCourses = async () => {
-    const res = await getCourses()
-    if (res?.responseObject) {
-      setCourses(res.responseObject)
-    }
-  }
-
-  const fetchYears = async (courseId: string) => {
-    const res = await getCourseYears(courseId)
-    if (res?.responseObject) {
-      setYears(res.responseObject)
-    }
-  }
-
-  const fetchSubjects = async (courseId: string, yearName: string) => {
-    const res = await getSubjectsByCourseYear(courseId, yearName)
-    if (res?.responseObject) {
-      setSubjects(res.responseObject)
-    }
-  }
-
-  const fetchChapters = async () => {
-    if (!selectedSubject?.id) {
-      setChapters([])
-      return
-    }
-    setIsLoading(true)
-    const res = await getChapters(selectedSubject.id)
-    if (res?.responseObject) {
-      setChapters(res.responseObject)
-    } else {
-      setChapters([])
-    }
-    setIsLoading(false)
-    setIsRefreshing(false)
-  }
-
-  const fetchContent = async (page: number = 0) => {
+  const init = async () => {
     try {
-      setIsLoading(true)
-      const response = await getAllEContent({
-        page,
-        limit: ITEMS_PER_PAGE,
-        classId: selectedCourse?.id || undefined,
-        subjectId: selectedSubject?.id || undefined,
-        search: debouncedSearch || undefined,
-      })
-      if (response?.responseObject) {
-        setContentList(response.responseObject.content || [])
-        setTotalElements(response.responseObject.totalElements || 0)
+      const userData = await storage.getUserData()
+      const batchId = userData?.runningBatchId
+      if (!batchId) {
+        setLoading(false)
+        Alert.alert('Error', 'No batch found in user data')
+        return
+      }
+
+      const res = await api.get(`/v1/course/batch/${batchId}`)
+      const courseList = res?.responseObject || res || []
+
+      if (Array.isArray(courseList) && courseList.length > 0) {
+        setCourses(courseList)
+        // Load subjects for the first course and year
+        if (courseList[0]?.years?.length > 0) {
+          const firstCourse = courseList[0]
+          const firstYear = firstCourse.years[0]
+          setLoadingSubjects(true)
+          try {
+            const subjectRes = await api.get(
+              `/v1/subject/course/${firstCourse.id}/year/${firstYear.name}`,
+            )
+            const subjectList = subjectRes?.responseObject || []
+            setSubjects(subjectList)
+          } catch (error) {
+            console.log('Error loading initial subjects:', error)
+          }
+          setLoadingSubjects(false)
+        }
       } else {
-        setContentList([])
-        setTotalElements(0)
+        Alert.alert('Error', 'No courses found')
       }
     } catch (error) {
-      console.error('Error fetching content:', error)
-      setContentList([])
-      setTotalElements(0)
-    } finally {
-      setIsLoading(false)
-      setIsRefreshing(false)
+      console.log('Error:', error)
+      Alert.alert('Error', 'Something went wrong')
     }
+    setLoading(false)
   }
 
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true)
-    if (viewMode === 'tree') {
-      fetchChapters()
-    } else {
-      fetchContent(currentPage)
-    }
-  }, [currentPage, viewMode, selectedSubject])
+  // Get selected course
+  const getSelectedCourse = (): Course | null => {
+    if (courses.length === 0 || selectedCourseIndex >= courses.length) return null
+    return courses[selectedCourseIndex]
+  }
 
-  const handleLoadMore = () => {
-    if (viewMode === 'list') {
-      const totalPages = Math.ceil(totalElements / ITEMS_PER_PAGE)
-      if (currentPage < totalPages - 1) {
-        const nextPage = currentPage + 1
-        setCurrentPage(nextPage)
-        fetchContent(nextPage)
+  // Get years from selected course
+  const getYears = (): Year[] => {
+    const course = getSelectedCourse()
+    if (!course?.years) return []
+    return course.years
+  }
+
+  // Load subjects based on selected course and year
+  const loadSubjects = async (courseIndex: number, yearIndex: number) => {
+    const course = courses[courseIndex]
+    if (!course?.years || course.years.length === 0) {
+      setSubjects([])
+      setSelectedSubjectIndex(0)
+      return
+    }
+
+    const year = course.years[yearIndex]
+    if (!year?.name) {
+      setSubjects([])
+      setSelectedSubjectIndex(0)
+      return
+    }
+
+    setLoadingSubjects(true)
+    try {
+      const res = await api.get(`/v1/subject/course/${course.id}/year/${year.name}`)
+      const subjectList = res?.responseObject || []
+      setSubjects(subjectList)
+      setSelectedSubjectIndex(0)
+    } catch (error) {
+      console.log('Error loading subjects:', error)
+      setSubjects([])
+    }
+    setLoadingSubjects(false)
+  }
+
+  const handleCourseSelect = (index: number) => {
+    setSelectedCourseIndex(index)
+    setSelectedYearIndex(0)
+    setContentList([])
+    setSubjects([])
+    setSelectedSubjectIndex(0)
+    setShowCourseModal(false)
+    // Load subjects for the new course
+    loadSubjects(index, 0)
+  }
+
+  const handleYearSelect = (index: number) => {
+    setSelectedYearIndex(index)
+    setContentList([])
+    setSubjects([])
+    setSelectedSubjectIndex(0)
+    setShowYearModal(false)
+    // Load subjects for the new year
+    loadSubjects(selectedCourseIndex, index)
+  }
+
+  const handleSubjectSelect = (index: number) => {
+    setSelectedSubjectIndex(index)
+    setShowSubjectModal(false)
+  }
+
+  // Pick file
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      })
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0]
+        setSelectedFile({
+          uri: file.uri,
+          name: file.name,
+          type: file.mimeType || 'application/octet-stream',
+        })
       }
+    } catch (error) {
+      console.log('Error picking file:', error)
+      Alert.alert('Error', 'Failed to pick file')
     }
   }
 
-  // Chapter handlers
-  const handleAddChapter = () => {
-    setEditingChapter(null)
-    setShowChapterForm(true)
+  // Upload content
+  const handleUpload = async () => {
+    const course = getSelectedCourse()
+
+    if (!course) {
+      Alert.alert('Error', 'Please select a course')
+      return
+    }
+
+    if (subjects.length === 0) {
+      Alert.alert('Error', 'No subjects available. Please select a course and year first.')
+      return
+    }
+
+    const selectedSubject = subjects[selectedSubjectIndex]
+    if (!selectedSubject) {
+      Alert.alert('Error', 'Please select a subject')
+      return
+    }
+
+    if (!title.trim()) {
+      Alert.alert('Error', 'Please enter a title')
+      return
+    }
+
+    if (!selectedFile) {
+      Alert.alert('Error', 'Please select a file')
+      return
+    }
+
+    setUploading(true)
+
+    try {
+      const response = await uploadEContent(selectedFile, {
+        classId: course.id,
+        className: course.name,
+        subjectId: selectedSubject.id,
+        subjectName: selectedSubject.name,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        contentType: ContentType.DOCUMENT,
+        status: ContentStatus.PUBLISHED,
+      })
+
+      if (response?.responseObject) {
+        Alert.alert('Success', 'Content uploaded successfully')
+        resetForm()
+        fetchContent()
+      } else {
+        Alert.alert('Error', 'Failed to upload content')
+      }
+    } catch (error) {
+      console.log('Upload error:', error)
+      Alert.alert('Error', 'Failed to upload content')
+    }
+
+    setUploading(false)
   }
 
-  const handleEditChapter = (chapter: Chapter) => {
-    setEditingChapter(chapter)
-    setShowChapterForm(true)
+  const resetForm = () => {
+    setTitle('')
+    setDescription('')
+    setSelectedFile(null)
   }
 
-  // Section handlers
-  const handleAddSection = (chapter: Chapter) => {
-    setSelectedChapterForSection(chapter)
-    setEditingSection(null)
-    setShowSectionForm(true)
+  // Fetch content list
+  const fetchContent = async () => {
+    const course = getSelectedCourse()
+    if (!course) {
+      Alert.alert('Info', 'Please select a course first')
+      return
+    }
+
+    setFetching(true)
+    setContentList([])
+
+    try {
+      const response = await getAllEContent({
+        classId: course.id,
+        page: 0,
+        limit: 50,
+      })
+
+      if (response?.responseObject?.content) {
+        setContentList(response.responseObject.content)
+        if (response.responseObject.content.length === 0) {
+          Alert.alert('Info', 'No content found for this course')
+        }
+      } else {
+        setContentList([])
+      }
+    } catch (error) {
+      console.log('Fetch error:', error)
+      Alert.alert('Error', 'Failed to fetch content')
+    }
+
+    setFetching(false)
   }
 
-  const handleEditSection = (chapter: Chapter, section: ContentSection) => {
-    setSelectedChapterForSection(chapter)
-    setEditingSection(section)
-    setShowSectionForm(true)
-  }
-
-  // Content handlers
-  const handleAddContent = (chapter: Chapter, section: ContentSection) => {
-    setSelectedChapterForContent(chapter)
-    setSelectedSectionForContent(section)
-    setEditingContent(null)
-    setShowContentForm(true)
-  }
-
-  const handleEditContent = (chapter: Chapter, section: ContentSection, content: EContent) => {
-    setSelectedChapterForContent(chapter)
-    setSelectedSectionForContent(section)
-    setEditingContent(content)
-    setShowContentForm(true)
-  }
-
-  const handleDeleteListItem = (item: EContent) => {
-    Alert.alert('Delete Content', `Are you sure you want to delete "${item.title}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteEContent(item.id)
-            fetchContent(currentPage)
-          } catch (error) {
-            console.error('Error deleting content:', error)
-            Alert.alert('Error', 'Failed to delete content')
-          }
-        },
-      },
-    ])
-  }
-
+  // View content
   const handleViewContent = (item: EContent) => {
     if (item.fileUrl || item.contentUrl) {
       Linking.openURL(item.fileUrl || item.contentUrl || '')
+    } else {
+      Alert.alert('Info', 'No file URL available')
     }
   }
 
+  // Format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -316,498 +325,347 @@ export default function EContentScreen() {
     })
   }
 
-  const renderContentItem = ({ item }: { item: EContent }) => {
-    const typeColor = item.contentType
-      ? getContentTypeColor(item.contentType)
-      : getFileColor(item.mimeType)
-    const typeIcon = item.contentType
-      ? getContentTypeIcon(item.contentType)
-      : getFileIcon(item.mimeType)
-    const typeLabel = item.contentType
-      ? getContentTypeLabel(item.contentType)
-      : getFileTypeLabel(item.mimeType)
-
+  if (loading) {
     return (
-      <View style={[styles.contentCard, { backgroundColor: cardBackground }]}>
-        <View style={styles.contentHeader}>
-          <View style={[styles.fileIconContainer, { backgroundColor: `${typeColor}20` }]}>
-            <IconSymbol name={typeIcon as any} size={24} color={typeColor} />
-          </View>
-          <View style={styles.contentInfo}>
-            <ThemedText style={[styles.contentTitle, { color: textColor }]} numberOfLines={1}>
-              {item.title}
-            </ThemedText>
-            <View style={styles.contentMeta}>
-              <ThemedText style={[styles.contentMetaText, { color: mutedColor }]}>
-                {item.className} - {item.subjectName}
-              </ThemedText>
-            </View>
-          </View>
-          <View
-            style={[
-              styles.statusBadge,
-              {
-                backgroundColor:
-                  item.status === ContentStatus.PUBLISHED ? `${successColor}20` : `${mutedColor}20`,
-              },
-            ]}
-          >
-            <ThemedText
-              style={[
-                styles.statusBadgeText,
-                { color: item.status === ContentStatus.PUBLISHED ? successColor : mutedColor },
-              ]}
-            >
-              {item.status === ContentStatus.PUBLISHED ? 'Published' : 'Draft'}
-            </ThemedText>
-          </View>
-        </View>
-
-        {item.description && (
-          <ThemedText style={[styles.contentDescription, { color: mutedColor }]} numberOfLines={2}>
-            {item.description}
-          </ThemedText>
-        )}
-
-        <View style={styles.contentDetails}>
-          <View style={styles.detailRow}>
-            {item.chapter && (
-              <View style={[styles.detailBadge, { backgroundColor: `${primaryColor}20` }]}>
-                <ThemedText style={[styles.detailBadgeText, { color: primaryColor }]}>
-                  {item.chapter}
-                </ThemedText>
-              </View>
-            )}
-            <View style={[styles.detailBadge, { backgroundColor: `${typeColor}20` }]}>
-              <ThemedText style={[styles.detailBadgeText, { color: typeColor }]}>
-                {typeLabel}
-              </ThemedText>
-            </View>
-            {item.fileSize && (
-              <ThemedText style={[styles.fileSize, { color: mutedColor }]}>
-                {formatFileSize(item.fileSize)}
-              </ThemedText>
-            )}
-          </View>
-          <ThemedText style={[styles.dateText, { color: mutedColor }]}>
-            {formatDate(item.createdAt)}
-          </ThemedText>
-        </View>
-
-        <View style={[styles.actionRow, { borderTopColor: borderColor }]}>
-          {(item.fileUrl || item.contentUrl) && (
-            <TouchableOpacity style={styles.actionButton} onPress={() => handleViewContent(item)}>
-              <IconSymbol name="eye.fill" size={18} color={primaryColor} />
-              <ThemedText style={[styles.actionText, { color: primaryColor }]}>View</ThemedText>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.actionButton} onPress={() => handleDeleteListItem(item)}>
-            <IconSymbol name="trash.fill" size={18} color={errorColor} />
-            <ThemedText style={[styles.actionText, { color: errorColor }]}>Delete</ThemedText>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <SafeAreaView style={[styles.container, styles.center, { backgroundColor }]}>
+        <ActivityIndicator size="large" color={primaryColor} />
+      </SafeAreaView>
     )
   }
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <IconSymbol
-        name={viewMode === 'tree' ? 'folder.fill' : 'doc.fill'}
-        size={48}
-        color={mutedColor}
-      />
-      <ThemedText style={[styles.emptyStateText, { color: textColor }]}>
-        {viewMode === 'tree' ? 'No Chapters Found' : 'No Content Found'}
-      </ThemedText>
-      <ThemedText style={[styles.emptyStateSubtext, { color: mutedColor }]}>
-        {viewMode === 'tree'
-          ? selectedSubject?.id
-            ? 'Create your first chapter to start organizing content.'
-            : 'Please select a subject to view chapters.'
-          : searchQuery || selectedCourse?.id || selectedYear?.id || selectedSubject?.id
-            ? 'Try adjusting your filters or search query.'
-            : 'Upload your first educational content to get started.'}
-      </ThemedText>
-      {viewMode === 'tree' && selectedSubject?.id && (
-        <TouchableOpacity
-          style={[styles.emptyStateButton, { backgroundColor: primaryColor }]}
-          onPress={handleAddChapter}
-        >
-          <IconSymbol name="plus" size={20} color="#fff" />
-          <ThemedText style={styles.emptyStateButtonText}>Add Chapter</ThemedText>
-        </TouchableOpacity>
-      )}
-    </View>
-  )
-
-  const renderPickerModal = (
-    visible: boolean,
-    onClose: () => void,
-    title: string,
-    options: { id: string; name: string }[],
-    selected: { id: string; name: string } | null,
-    onSelect: (option: { id: string; name: string } | null) => void,
-    showAllOption: boolean = true,
-  ) => (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.pickerModalOverlay}>
-        <View style={[styles.pickerModalContent, { backgroundColor: cardBackground }]}>
-          <View style={[styles.pickerModalHeader, { borderBottomColor: borderColor }]}>
-            <ThemedText style={[styles.pickerModalTitle, { color: textColor }]}>{title}</ThemedText>
-            <TouchableOpacity onPress={onClose}>
-              <IconSymbol name="xmark.circle.fill" size={24} color={mutedColor} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.pickerOptions}>
-            {showAllOption && (
-              <TouchableOpacity
-                key="all-option"
-                style={[
-                  styles.pickerOption,
-                  { borderBottomColor: borderColor },
-                  !selected?.id && { backgroundColor: `${primaryColor}10` },
-                ]}
-                onPress={() => {
-                  onSelect(null)
-                  onClose()
-                }}
-              >
-                <ThemedText
-                  style={[
-                    styles.pickerOptionText,
-                    { color: !selected?.id ? primaryColor : textColor },
-                  ]}
-                >
-                  All
-                </ThemedText>
-              </TouchableOpacity>
-            )}
-            {options.length === 0 ? (
-              <View
-                key="no-options"
-                style={[styles.pickerOption, { borderBottomColor: borderColor }]}
-              >
-                <ThemedText style={[styles.pickerOptionText, { color: mutedColor }]}>
-                  No options available
-                </ThemedText>
-              </View>
-            ) : (
-              options.map(option => (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[
-                    styles.pickerOption,
-                    { borderBottomColor: borderColor },
-                    selected?.id === option.id && { backgroundColor: `${primaryColor}10` },
-                  ]}
-                  onPress={() => {
-                    onSelect(option)
-                    onClose()
-                  }}
-                >
-                  <ThemedText
-                    style={[
-                      styles.pickerOptionText,
-                      { color: selected?.id === option.id ? primaryColor : textColor },
-                    ]}
-                  >
-                    {option.name}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  )
+  const selectedCourse = getSelectedCourse()
+  const years = getYears()
+  const selectedYear = years[selectedYearIndex]
 
   return (
     <SafeAreaView
       edges={{ top: 'off', bottom: 'additive' }}
       style={[styles.container, { backgroundColor }]}
     >
-      {/* Summary Card */}
-      <View style={[styles.summaryCard, { backgroundColor: cardBackground }]}>
-        <View style={styles.summaryLeft}>
-          <ThemedText style={[styles.summaryValue, { color: textColor }]}>
-            {viewMode === 'tree' ? chapters.length : totalElements}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Filter Card */}
+        <View style={[styles.card, { backgroundColor: cardBackground }]}>
+          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+            Select Course, Year & Subject
           </ThemedText>
-          <ThemedText style={[styles.summaryLabel, { color: mutedColor }]}>
-            {viewMode === 'tree' ? 'Chapters' : 'Total Content'}
-          </ThemedText>
-        </View>
-        <View style={styles.summaryActions}>
-          {/* View Mode Toggle */}
-          <View style={[styles.viewModeToggle, { backgroundColor: inputBackground }]}>
+
+          {/* Course Dropdown */}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>Course</ThemedText>
             <TouchableOpacity
-              style={[
-                styles.viewModeButton,
-                viewMode === 'tree' && { backgroundColor: primaryColor },
-              ]}
-              onPress={() => setViewMode('tree')}
+              style={[styles.dropdown, { backgroundColor, borderColor }]}
+              onPress={() => setShowCourseModal(true)}
             >
-              <IconSymbol
-                name="list.bullet.indent"
-                size={18}
-                color={viewMode === 'tree' ? '#fff' : mutedColor}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.viewModeButton,
-                viewMode === 'list' && { backgroundColor: primaryColor },
-              ]}
-              onPress={() => setViewMode('list')}
-            >
-              <IconSymbol
-                name="square.grid.2x2.fill"
-                size={18}
-                color={viewMode === 'list' ? '#fff' : mutedColor}
-              />
+              <ThemedText style={[styles.fieldText, { color: textColor }]}>
+                {selectedCourse?.name || 'Select Course'}
+              </ThemedText>
+              <ThemedText style={{ color: mutedColor }}>▼</ThemedText>
             </TouchableOpacity>
           </View>
-          {viewMode === 'tree' && selectedSubject?.id && (
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: primaryColor }]}
-              onPress={handleAddChapter}
-            >
-              <IconSymbol name="plus" size={20} color="#fff" />
-              <ThemedText style={styles.addButtonText}>Chapter</ThemedText>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
 
-      {/* Filter Section */}
-      <View style={styles.filterSection}>
-        {/* Course Dropdown */}
-        <TouchableOpacity
-          style={[
-            styles.filterDropdown,
-            { backgroundColor: inputBackground, borderColor: inputBorder },
-          ]}
-          onPress={() => setShowCoursePicker(true)}
-        >
-          <ThemedText
-            style={[
-              styles.filterDropdownText,
-              { color: selectedCourse?.id ? textColor : mutedColor },
-            ]}
-            numberOfLines={1}
-          >
-            {selectedCourse?.name || 'Select Course'}
-          </ThemedText>
-          <IconSymbol name="chevron.down" size={16} color={mutedColor} />
-        </TouchableOpacity>
-
-        <View style={styles.filterRow}>
           {/* Year Dropdown */}
-          <TouchableOpacity
-            style={[
-              styles.filterDropdown,
-              styles.filterDropdownFirst,
-              { backgroundColor: inputBackground, borderColor: inputBorder },
-              !selectedCourse?.id && styles.filterDisabled,
-            ]}
-            onPress={() => selectedCourse?.id && setShowYearPicker(true)}
-            disabled={!selectedCourse?.id}
-          >
-            <ThemedText
-              style={[
-                styles.filterDropdownText,
-                { color: selectedYear?.id ? textColor : mutedColor },
-                !selectedCourse?.id && { color: borderColor },
-              ]}
-              numberOfLines={1}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>Year</ThemedText>
+            <TouchableOpacity
+              style={[styles.dropdown, { backgroundColor, borderColor }]}
+              onPress={() => setShowYearModal(true)}
             >
-              {selectedYear?.name || 'Select Year'}
-            </ThemedText>
-            <IconSymbol
-              name="chevron.down"
-              size={16}
-              color={selectedCourse?.id ? mutedColor : borderColor}
-            />
-          </TouchableOpacity>
+              <ThemedText style={[styles.fieldText, { color: textColor }]}>
+                {selectedYear?.name || 'Select Year'}
+              </ThemedText>
+              <ThemedText style={{ color: mutedColor }}>▼</ThemedText>
+            </TouchableOpacity>
+          </View>
 
           {/* Subject Dropdown */}
-          <TouchableOpacity
-            style={[
-              styles.filterDropdown,
-              styles.filterDropdownInRow,
-              { backgroundColor: inputBackground, borderColor: inputBorder },
-              !selectedYear?.id && styles.filterDisabled,
-            ]}
-            onPress={() => selectedYear?.id && setShowSubjectPicker(true)}
-            disabled={!selectedYear?.id}
-          >
-            <ThemedText
-              style={[
-                styles.filterDropdownText,
-                { color: selectedSubject?.id ? textColor : mutedColor },
-                !selectedYear?.id && { color: borderColor },
-              ]}
-              numberOfLines={1}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>Subject *</ThemedText>
+            <TouchableOpacity
+              style={[styles.dropdown, { backgroundColor, borderColor }]}
+              onPress={() => setShowSubjectModal(true)}
+              disabled={loadingSubjects || subjects.length === 0}
             >
-              {selectedSubject?.name || 'Select Subject'}
-            </ThemedText>
-            <IconSymbol
-              name="chevron.down"
-              size={16}
-              color={selectedYear?.id ? mutedColor : borderColor}
+              {loadingSubjects ? (
+                <ActivityIndicator size="small" color={primaryColor} />
+              ) : (
+                <ThemedText
+                  style={[
+                    styles.fieldText,
+                    { color: subjects.length > 0 ? textColor : mutedColor },
+                  ]}
+                >
+                  {subjects.length > 0
+                    ? subjects[selectedSubjectIndex]?.name || 'Select Subject'
+                    : 'Select Course & Year first'}
+                </ThemedText>
+              )}
+              <ThemedText style={{ color: mutedColor }}>▼</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Upload Card */}
+        <View style={[styles.card, { backgroundColor: cardBackground }]}>
+          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Upload Content</ThemedText>
+
+          {/* Title */}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>Title *</ThemedText>
+            <TextInput
+              style={[styles.textInput, { backgroundColor, borderColor, color: textColor }]}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Enter content title"
+              placeholderTextColor={mutedColor}
             />
+          </View>
+
+          {/* Description */}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>
+              Description (Optional)
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.textInput,
+                styles.textArea,
+                { backgroundColor, borderColor, color: textColor },
+              ]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Enter description"
+              placeholderTextColor={mutedColor}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          {/* File Picker */}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>File *</ThemedText>
+            <TouchableOpacity
+              style={[styles.filePicker, { backgroundColor, borderColor }]}
+              onPress={handlePickFile}
+            >
+              <IconSymbol name="doc.fill" size={24} color={primaryColor} />
+              <ThemedText
+                style={[styles.filePickerText, { color: selectedFile ? textColor : mutedColor }]}
+              >
+                {selectedFile ? selectedFile.name : 'Tap to select file'}
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Upload Button */}
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: primaryColor }]}
+            onPress={handleUpload}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <ThemedText style={styles.buttonText}>Upload Content</ThemedText>
+            )}
           </TouchableOpacity>
         </View>
 
-        {viewMode === 'list' && (
-          <View
-            style={[
-              styles.searchContainer,
-              { backgroundColor: inputBackground, borderColor: inputBorder },
-            ]}
-          >
-            <IconSymbol name="magnifyingglass" size={18} color={mutedColor} />
-            <TextInput
-              style={[styles.searchInput, { color: textColor }]}
-              placeholder="Search by title..."
-              placeholderTextColor={mutedColor}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <IconSymbol name="xmark.circle.fill" size={18} color={mutedColor} />
-              </TouchableOpacity>
-            )}
+        {/* View Content Card */}
+        <View style={[styles.card, { backgroundColor: cardBackground }]}>
+          <View style={styles.cardHeader}>
+            <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+              View Content
+            </ThemedText>
+            <TouchableOpacity
+              style={[styles.fetchButton, { backgroundColor: primaryColor }]}
+              onPress={fetchContent}
+              disabled={fetching}
+            >
+              {fetching ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <ThemedText style={styles.fetchButtonText}>Fetch</ThemedText>
+              )}
+            </TouchableOpacity>
           </View>
-        )}
-      </View>
 
-      {/* Content Area */}
-      {viewMode === 'tree' ? (
-        <ContentTreeView
-          chapters={chapters}
-          onRefresh={handleRefresh}
-          onEditChapter={handleEditChapter}
-          onAddSection={handleAddSection}
-          onEditSection={handleEditSection}
-          onAddContent={handleAddContent}
-          onEditContent={handleEditContent}
-          isLoading={isLoading && !isRefreshing}
-        />
-      ) : isLoading && !isRefreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={primaryColor} />
-          <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
-            Loading content...
-          </ThemedText>
+          {/* Content Table */}
+          {contentList.length > 0 && (
+            <View style={styles.tableContainer}>
+              {/* Table Header */}
+              <View style={[styles.tableHeader, { borderBottomColor: borderColor }]}>
+                <ThemedText style={[styles.tableHeaderCell, styles.cellTitle, { color: textColor }]}>
+                  Title
+                </ThemedText>
+                <ThemedText style={[styles.tableHeaderCell, styles.cellType, { color: textColor }]}>
+                  Type
+                </ThemedText>
+                <ThemedText style={[styles.tableHeaderCell, styles.cellDate, { color: textColor }]}>
+                  Date
+                </ThemedText>
+                <ThemedText
+                  style={[styles.tableHeaderCell, styles.cellAction, { color: textColor }]}
+                >
+                  Action
+                </ThemedText>
+              </View>
+
+              {/* Table Rows */}
+              {contentList.map((item, index) => (
+                <View
+                  key={item.id || index}
+                  style={[styles.tableRow, { borderBottomColor: borderColor }]}
+                >
+                  <ThemedText
+                    style={[styles.tableCell, styles.cellTitle, { color: textColor }]}
+                    numberOfLines={1}
+                  >
+                    {item.title}
+                  </ThemedText>
+                  <ThemedText style={[styles.tableCell, styles.cellType, { color: mutedColor }]}>
+                    {item.contentType || 'File'}
+                  </ThemedText>
+                  <ThemedText style={[styles.tableCell, styles.cellDate, { color: mutedColor }]}>
+                    {formatDate(item.createdAt)}
+                  </ThemedText>
+                  <TouchableOpacity
+                    style={[styles.viewButton, { backgroundColor: `${primaryColor}20` }]}
+                    onPress={() => handleViewContent(item)}
+                  >
+                    <ThemedText style={[styles.viewButtonText, { color: primaryColor }]}>
+                      View
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {contentList.length === 0 && !fetching && (
+            <View style={styles.emptyState}>
+              <IconSymbol name="doc.fill" size={32} color={mutedColor} />
+              <ThemedText style={[styles.emptyText, { color: mutedColor }]}>
+                No content found. Select a course and tap Fetch.
+              </ThemedText>
+            </View>
+          )}
         </View>
-      ) : (
-        <FlatList
-          data={contentList}
-          renderItem={renderContentItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              tintColor={primaryColor}
-            />
-          }
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          ListEmptyComponent={renderEmptyState}
-          ListFooterComponent={
-            contentList.length > 0 &&
-            currentPage < Math.ceil(totalElements / ITEMS_PER_PAGE) - 1 ? (
-              <ActivityIndicator style={styles.footerLoader} size="small" color={primaryColor} />
-            ) : null
-          }
-        />
-      )}
+      </ScrollView>
 
-      {/* Picker Modals */}
-      {renderPickerModal(
-        showCoursePicker,
-        () => setShowCoursePicker(false),
-        'Select Course',
-        courses.map(c => ({ id: c.id, name: c.name })),
-        selectedCourse,
-        option => {
-          setSelectedCourse(option)
-          setSelectedYear(null)
-          setSelectedSubject(null)
-        },
-      )}
+      {/* Course Modal */}
+      <Modal visible={showCourseModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCourseModal(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Course</ThemedText>
+            <ScrollView>
+              {courses.map((course, index) => (
+                <TouchableOpacity
+                  key={`course-${index}`}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedCourseIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
+                  onPress={() => handleCourseSelect(index)}
+                >
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedCourseIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
+                    {course.name}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
-      {renderPickerModal(
-        showYearPicker,
-        () => setShowYearPicker(false),
-        'Select Year',
-        years.map(y => ({ id: y.id, name: y.name })),
-        selectedYear,
-        option => {
-          setSelectedYear(option)
-          setSelectedSubject(null)
-        },
-      )}
+      {/* Year Modal */}
+      <Modal visible={showYearModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowYearModal(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Year</ThemedText>
+            <ScrollView>
+              {years.map((year, index) => (
+                <TouchableOpacity
+                  key={`year-${index}`}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedYearIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
+                  onPress={() => handleYearSelect(index)}
+                >
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedYearIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
+                    {year.name}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
-      {renderPickerModal(
-        showSubjectPicker,
-        () => setShowSubjectPicker(false),
-        'Select Subject',
-        subjects.map(s => ({ id: s.id, name: s.name })),
-        selectedSubject,
-        option => {
-          setSelectedSubject(option)
-        },
-      )}
-
-      {/* Form Modals */}
-      <ChapterForm
-        visible={showChapterForm}
-        onClose={() => {
-          setShowChapterForm(false)
-          setEditingChapter(null)
-        }}
-        onSuccess={fetchChapters}
-        editingChapter={editingChapter}
-      />
-
-      <SectionForm
-        visible={showSectionForm}
-        onClose={() => {
-          setShowSectionForm(false)
-          setEditingSection(null)
-          setSelectedChapterForSection(null)
-        }}
-        onSuccess={fetchChapters}
-        chapter={selectedChapterForSection}
-        editingSection={editingSection}
-      />
-
-      <ContentForm
-        visible={showContentForm}
-        onClose={() => {
-          setShowContentForm(false)
-          setEditingContent(null)
-          setSelectedChapterForContent(null)
-          setSelectedSectionForContent(null)
-        }}
-        onSuccess={() => {
-          if (viewMode === 'tree') {
-            fetchChapters()
-          } else {
-            fetchContent(currentPage)
-          }
-        }}
-        chapter={selectedChapterForContent}
-        section={selectedSectionForContent}
-        editingContent={editingContent}
-      />
+      {/* Subject Modal */}
+      <Modal visible={showSubjectModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubjectModal(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Subject</ThemedText>
+            <ScrollView>
+              {subjects.map((subject, index) => (
+                <TouchableOpacity
+                  key={`subject-${subject.id || index}`}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedSubjectIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
+                  onPress={() => handleSubjectSelect(index)}
+                >
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedSubjectIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
+                    {subject.name}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+              {subjects.length === 0 && (
+                <View style={styles.emptyState}>
+                  <ThemedText style={[styles.emptyText, { color: mutedColor }]}>
+                    No subjects found. Select a course and year first.
+                  </ThemedText>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -816,282 +674,267 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  summaryCard: {
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 20,
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 16,
   },
-  summaryLeft: {
-    alignItems: 'flex-start',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
   },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 4,
+  fieldContainer: {
+    marginBottom: 16,
   },
-  summaryLabel: {
-    fontSize: 12,
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
   },
-  summaryActions: {
+  dropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+  },
+  fieldText: {
+    fontSize: 16,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 16,
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  filePicker: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  viewModeToggle: {
-    flexDirection: 'row',
+    borderWidth: 1,
     borderRadius: 8,
-    padding: 4,
+    borderStyle: 'dashed',
+    padding: 16,
   },
-  viewModeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  filePickerText: {
+    fontSize: 14,
+    marginLeft: 12,
+    flex: 1,
+  },
+  button: {
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  fetchButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 6,
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginLeft: 12,
-  },
-  addButtonText: {
+  fetchButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-    marginLeft: 6,
   },
-  filterSection: {
-    paddingHorizontal: 20,
+  tableContainer: {
+    marginTop: 8,
+  },
+  tableHeader: {
+    flexDirection: 'row',
     paddingVertical: 12,
+    borderBottomWidth: 2,
   },
-  filterRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
-  filterDropdown: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 12,
-  },
-  filterDropdownInRow: {
-    marginTop: 0,
-    marginLeft: 12,
-  },
-  filterDropdownFirst: {
-    marginTop: 0,
-    marginLeft: 0,
-  },
-  filterDropdownText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  filterDisabled: {
-    opacity: 0.5,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    padding: 0,
-    marginHorizontal: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-  },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  contentCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  contentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  fileIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  contentInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  contentTitle: {
-    fontSize: 16,
+  tableHeaderCell: {
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
   },
-  contentMeta: {
+  tableRow: {
     flexDirection: 'row',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
     alignItems: 'center',
   },
-  contentMetaText: {
+  tableCell: {
     fontSize: 13,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+  cellTitle: {
+    flex: 2,
+    paddingRight: 8,
   },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  contentDescription: {
-    fontSize: 14,
-    marginTop: 12,
-    lineHeight: 20,
-  },
-  contentDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+  cellType: {
     flex: 1,
+    paddingRight: 8,
   },
-  detailBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 4,
+  cellDate: {
+    flex: 1,
+    paddingRight: 8,
   },
-  detailBadgeText: {
-    fontSize: 12,
-    fontWeight: '500',
+  cellAction: {
+    width: 60,
+    textAlign: 'center',
   },
-  fileSize: {
-    fontSize: 12,
-  },
-  dateText: {
-    fontSize: 12,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  actionButton: {
-    flexDirection: 'row',
+  viewButton: {
+    width: 60,
+    paddingVertical: 6,
+    borderRadius: 4,
     alignItems: 'center',
-    paddingVertical: 4,
   },
-  actionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
+  viewButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 32,
   },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtext: {
+  emptyText: {
     fontSize: 14,
     textAlign: 'center',
-    paddingHorizontal: 40,
-    marginBottom: 24,
+    marginTop: 12,
   },
-  emptyStateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  emptyStateButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  pickerModalOverlay: {
+  modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  pickerModalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  modalContent: {
+    width: '80%',
+    borderRadius: 12,
+    padding: 20,
     maxHeight: '60%',
   },
-  pickerModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  pickerModalTitle: {
+  modalTitle: {
     fontSize: 18,
     fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
   },
-  pickerOptions: {
-    paddingHorizontal: 20,
-  },
-  pickerOption: {
-    paddingVertical: 16,
+  modalOption: {
+    padding: 16,
     borderBottomWidth: 1,
   },
-  pickerOptionText: {
+  modalOptionText: {
     fontSize: 16,
   },
-  footerLoader: {
-    paddingVertical: 20,
-  },
 })
+
+/*
+// ==================== COMMENTED OUT - COMPLEX FEATURES ====================
+// These were part of the original implementation with tree view, list view, etc.
+// Kept for reference if needed later.
+
+// Old imports:
+// import { ChapterForm, ContentForm, ContentTreeView, SectionForm } from '@/components/econtent'
+// import {
+//   Chapter,
+//   ContentSection,
+//   CourseOption,
+//   YearOption,
+//   SubjectByCourseOption,
+//   getChapters,
+//   getCourseYears,
+//   getCourses,
+//   getSubjectsByCourseYear,
+//   getFileIcon,
+//   getFileColor,
+//   getFileTypeLabel,
+//   getContentTypeIcon,
+//   getContentTypeColor,
+//   getContentTypeLabel,
+//   formatFileSize,
+//   deleteEContent,
+// } from '@/services/eContentApi'
+
+// Old state for tree view:
+// type ViewMode = 'tree' | 'list'
+// const [viewMode, setViewMode] = useState<ViewMode>('tree')
+// const [chapters, setChapters] = useState<Chapter[]>([])
+// const [showChapterForm, setShowChapterForm] = useState(false)
+// const [showSectionForm, setShowSectionForm] = useState(false)
+// const [showContentForm, setShowContentForm] = useState(false)
+// const [editingChapter, setEditingChapter] = useState<Chapter | null>(null)
+// const [editingSection, setEditingSection] = useState<ContentSection | null>(null)
+// const [editingContent, setEditingContent] = useState<EContent | null>(null)
+// const [selectedChapterForSection, setSelectedChapterForSection] = useState<Chapter | null>(null)
+// const [selectedChapterForContent, setSelectedChapterForContent] = useState<Chapter | null>(null)
+// const [selectedSectionForContent, setSelectedSectionForContent] = useState<ContentSection | null>(null)
+
+// Old form modals:
+// <ChapterForm
+//   visible={showChapterForm}
+//   onClose={() => {
+//     setShowChapterForm(false)
+//     setEditingChapter(null)
+//   }}
+//   onSuccess={fetchChapters}
+//   editingChapter={editingChapter}
+// />
+// <SectionForm
+//   visible={showSectionForm}
+//   onClose={() => {
+//     setShowSectionForm(false)
+//     setEditingSection(null)
+//     setSelectedChapterForSection(null)
+//   }}
+//   onSuccess={fetchChapters}
+//   chapter={selectedChapterForSection}
+//   editingSection={editingSection}
+// />
+// <ContentForm
+//   visible={showContentForm}
+//   onClose={() => {
+//     setShowContentForm(false)
+//     setEditingContent(null)
+//     setSelectedChapterForContent(null)
+//     setSelectedSectionForContent(null)
+//   }}
+//   onSuccess={() => {
+//     if (viewMode === 'tree') {
+//       fetchChapters()
+//     } else {
+//       fetchContent(currentPage)
+//     }
+//   }}
+//   chapter={selectedChapterForContent}
+//   section={selectedSectionForContent}
+//   editingContent={editingContent}
+// />
+
+// Old tree view:
+// <ContentTreeView
+//   chapters={chapters}
+//   onRefresh={handleRefresh}
+//   onEditChapter={handleEditChapter}
+//   onAddSection={handleAddSection}
+//   onEditSection={handleEditSection}
+//   onAddContent={handleAddContent}
+//   onEditContent={handleEditContent}
+//   isLoading={isLoading && !isRefreshing}
+// />
+*/
