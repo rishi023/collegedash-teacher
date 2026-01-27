@@ -65,7 +65,7 @@ export default function DashboardScreen() {
   const quickActions: Action[] = [
     { title: 'Grades', icon: 'chart.bar.fill', route: '/grades', color: successColor },
     { title: 'Attendance', icon: 'calendar', route: '/attendance', color: warningColor },
-    { title: 'Homework', icon: 'book.fill', route: '/homework', color: errorColor },
+    { title: 'E-Content', icon: 'book.fill', route: '/e-content', color: errorColor },
     { title: 'Assignments', icon: 'book.fill', route: '/assignments', color: primaryColor },
   ]
 
