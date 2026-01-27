@@ -9,6 +9,7 @@ import {
   EContent,
   getAllEContent,
   uploadEContent,
+  SubjectByCourseOption,
 } from '@/services/eContentApi'
 import { api } from '@/services/axios'
 import { storage } from '@/services/storage'
@@ -49,6 +50,11 @@ export default function EContentScreen() {
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(0)
   const [selectedYearIndex, setSelectedYearIndex] = useState(0)
 
+  // Subjects for upload
+  const [subjects, setSubjects] = useState<SubjectByCourseOption[]>([])
+  const [selectedSubjectIndex, setSelectedSubjectIndex] = useState(0)
+  const [loadingSubjects, setLoadingSubjects] = useState(false)
+
   // Content data
   const [contentList, setContentList] = useState<EContent[]>([])
 
@@ -64,6 +70,7 @@ export default function EContentScreen() {
   // Modals
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [showYearModal, setShowYearModal] = useState(false)
+  const [showSubjectModal, setShowSubjectModal] = useState(false)
 
   useEffect(() => {
     init()
@@ -84,6 +91,22 @@ export default function EContentScreen() {
 
       if (Array.isArray(courseList) && courseList.length > 0) {
         setCourses(courseList)
+        // Load subjects for the first course and year
+        if (courseList[0]?.years?.length > 0) {
+          const firstCourse = courseList[0]
+          const firstYear = firstCourse.years[0]
+          setLoadingSubjects(true)
+          try {
+            const subjectRes = await api.get(
+              `/v1/subject/course/${firstCourse.id}/year/${firstYear.name}`,
+            )
+            const subjectList = subjectRes?.responseObject || []
+            setSubjects(subjectList)
+          } catch (error) {
+            console.log('Error loading initial subjects:', error)
+          }
+          setLoadingSubjects(false)
+        }
       } else {
         Alert.alert('Error', 'No courses found')
       }
@@ -107,17 +130,59 @@ export default function EContentScreen() {
     return course.years
   }
 
+  // Load subjects based on selected course and year
+  const loadSubjects = async (courseIndex: number, yearIndex: number) => {
+    const course = courses[courseIndex]
+    if (!course?.years || course.years.length === 0) {
+      setSubjects([])
+      setSelectedSubjectIndex(0)
+      return
+    }
+
+    const year = course.years[yearIndex]
+    if (!year?.name) {
+      setSubjects([])
+      setSelectedSubjectIndex(0)
+      return
+    }
+
+    setLoadingSubjects(true)
+    try {
+      const res = await api.get(`/v1/subject/course/${course.id}/year/${year.name}`)
+      const subjectList = res?.responseObject || []
+      setSubjects(subjectList)
+      setSelectedSubjectIndex(0)
+    } catch (error) {
+      console.log('Error loading subjects:', error)
+      setSubjects([])
+    }
+    setLoadingSubjects(false)
+  }
+
   const handleCourseSelect = (index: number) => {
     setSelectedCourseIndex(index)
     setSelectedYearIndex(0)
     setContentList([])
+    setSubjects([])
+    setSelectedSubjectIndex(0)
     setShowCourseModal(false)
+    // Load subjects for the new course
+    loadSubjects(index, 0)
   }
 
   const handleYearSelect = (index: number) => {
     setSelectedYearIndex(index)
     setContentList([])
+    setSubjects([])
+    setSelectedSubjectIndex(0)
     setShowYearModal(false)
+    // Load subjects for the new year
+    loadSubjects(selectedCourseIndex, index)
+  }
+
+  const handleSubjectSelect = (index: number) => {
+    setSelectedSubjectIndex(index)
+    setShowSubjectModal(false)
   }
 
   // Pick file
@@ -145,10 +210,20 @@ export default function EContentScreen() {
   // Upload content
   const handleUpload = async () => {
     const course = getSelectedCourse()
-    const years = getYears()
 
     if (!course) {
       Alert.alert('Error', 'Please select a course')
+      return
+    }
+
+    if (subjects.length === 0) {
+      Alert.alert('Error', 'No subjects available. Please select a course and year first.')
+      return
+    }
+
+    const selectedSubject = subjects[selectedSubjectIndex]
+    if (!selectedSubject) {
+      Alert.alert('Error', 'Please select a subject')
       return
     }
 
@@ -165,18 +240,11 @@ export default function EContentScreen() {
     setUploading(true)
 
     try {
-      const yearName = years[selectedYearIndex]?.name || ''
-
-      // Get subjects for the course and year to get subject info
-      const subjectRes = await api.get(`/v1/subject/course/${course.id}/year/${yearName}`)
-      const subjects = subjectRes?.responseObject || []
-      const firstSubject = subjects[0] || { id: '', name: 'General' }
-
       const response = await uploadEContent(selectedFile, {
         classId: course.id,
         className: course.name,
-        subjectId: firstSubject.id,
-        subjectName: firstSubject.name,
+        subjectId: selectedSubject.id,
+        subjectName: selectedSubject.name,
         title: title.trim(),
         description: description.trim() || undefined,
         contentType: ContentType.DOCUMENT,
@@ -278,7 +346,7 @@ export default function EContentScreen() {
         {/* Filter Card */}
         <View style={[styles.card, { backgroundColor: cardBackground }]}>
           <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-            Select Course & Year
+            Select Course, Year & Subject
           </ThemedText>
 
           {/* Course Dropdown */}
@@ -305,6 +373,32 @@ export default function EContentScreen() {
               <ThemedText style={[styles.fieldText, { color: textColor }]}>
                 {selectedYear?.name || 'Select Year'}
               </ThemedText>
+              <ThemedText style={{ color: mutedColor }}>▼</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Subject Dropdown */}
+          <View style={styles.fieldContainer}>
+            <ThemedText style={[styles.label, { color: textColor }]}>Subject *</ThemedText>
+            <TouchableOpacity
+              style={[styles.dropdown, { backgroundColor, borderColor }]}
+              onPress={() => setShowSubjectModal(true)}
+              disabled={loadingSubjects || subjects.length === 0}
+            >
+              {loadingSubjects ? (
+                <ActivityIndicator size="small" color={primaryColor} />
+              ) : (
+                <ThemedText
+                  style={[
+                    styles.fieldText,
+                    { color: subjects.length > 0 ? textColor : mutedColor },
+                  ]}
+                >
+                  {subjects.length > 0
+                    ? subjects[selectedSubjectIndex]?.name || 'Select Subject'
+                    : 'Select Course & Year first'}
+                </ThemedText>
+              )}
               <ThemedText style={{ color: mutedColor }}>▼</ThemedText>
             </TouchableOpacity>
           </View>
@@ -525,6 +619,49 @@ export default function EContentScreen() {
                   </ThemedText>
                 </TouchableOpacity>
               ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Subject Modal */}
+      <Modal visible={showSubjectModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubjectModal(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Subject</ThemedText>
+            <ScrollView>
+              {subjects.map((subject, index) => (
+                <TouchableOpacity
+                  key={`subject-${subject.id || index}`}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedSubjectIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
+                  onPress={() => handleSubjectSelect(index)}
+                >
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedSubjectIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
+                    {subject.name}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+              {subjects.length === 0 && (
+                <View style={styles.emptyState}>
+                  <ThemedText style={[styles.emptyText, { color: mutedColor }]}>
+                    No subjects found. Select a course and year first.
+                  </ThemedText>
+                </View>
+              )}
             </ScrollView>
           </View>
         </TouchableOpacity>
