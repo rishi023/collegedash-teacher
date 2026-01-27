@@ -86,10 +86,10 @@ export default function MoreScreen() {
 
   const quickActions: Action[] = [
     {
-      title: 'Grades',
+      title: 'Self Attendance',
       icon: 'chart.bar.fill',
       color: '#10b981',
-      route: '/grades',
+      route: '/self-attendance',
     },
     {
       title: 'Attendance',

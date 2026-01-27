@@ -1,4 +1,4 @@
-import { api } from './axios'
+import { api, ApiResponse } from './axios'
 import { storage } from './storage'
 
 // ==================== ENUMS ====================
@@ -114,15 +114,6 @@ export interface EContentListParams {
   contentType?: ContentType
   status?: ContentStatus
   search?: string
-}
-
-interface ApiResponse<T> {
-  status: string
-  timeStamp: string
-  message: string
-  debugMessage: string
-  apiResponseStatus: string
-  responseObject: T
 }
 
 interface PagedContent<T> {

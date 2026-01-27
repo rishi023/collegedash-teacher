@@ -1,5 +1,24 @@
-import axios, { AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { storage } from './storage'
+
+// Standard API response wrapper from backend
+export interface ApiResponseStatus {
+  code: number
+  message: string
+}
+
+export interface ApiResponse<T = unknown> {
+  status: string
+  timeStamp: string
+  message: string
+  debugMessage: string
+  apiResponseStatus: ApiResponseStatus
+  responseObject: T
+  error?: boolean
+  errorMessage?: string
+  planActive?: boolean
+  userDisabled?: boolean
+}
 
 // Global logout callback
 let globalLogoutCallback: (() => void) | null = null
@@ -59,4 +78,29 @@ api.interceptors.response.use(handleResponseSuccess, async error => {
   return null
 })
 
-export { api, axios }
+// Typed API client that reflects the interceptor transformation
+// The response interceptor returns res.data (ApiResponse) or null, not AxiosResponse
+type TypedApiClient = {
+  get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T> | null>
+  post<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<ApiResponse<T> | null>
+  put<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<ApiResponse<T> | null>
+  patch<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<ApiResponse<T> | null>
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T> | null>
+  defaults: typeof api.defaults
+}
+
+const typedApi = api as unknown as TypedApiClient
+
+export { typedApi as api, axios }

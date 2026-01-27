@@ -97,7 +97,7 @@ export default function EContentScreen() {
           const firstYear = firstCourse.years[0]
           setLoadingSubjects(true)
           try {
-            const subjectRes = await api.get(
+            const subjectRes = await api.get<SubjectByCourseOption[]>(
               `/v1/subject/course/${firstCourse.id}/year/${firstYear.name}`,
             )
             const subjectList = subjectRes?.responseObject || []
@@ -148,7 +148,9 @@ export default function EContentScreen() {
 
     setLoadingSubjects(true)
     try {
-      const res = await api.get(`/v1/subject/course/${course.id}/year/${year.name}`)
+      const res = await api.get<SubjectByCourseOption[]>(
+        `/v1/subject/course/${course.id}/year/${year.name}`,
+      )
       const subjectList = res?.responseObject || []
       setSubjects(subjectList)
       setSelectedSubjectIndex(0)

@@ -3,7 +3,7 @@ import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { router } from 'expo-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
   Image,
@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { changePassword } from '@/services/account'
+import { changePassword, getStaffProfile, StaffProfile } from '@/services/account'
 import { APP_INFO } from '@/constants'
 
 interface ActionButton {
@@ -42,7 +42,7 @@ export default function ProfileScreen() {
   const mutedColor = useThemeColor({}, 'muted')
   const borderColor = useThemeColor({}, 'border')
   const primaryColor = useThemeColor({}, 'primary')
-  const { logout, user } = useAuth()
+  const { logout } = useAuth()
 
   const [imageError, setImageError] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -50,8 +50,26 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
 
-  const studentDetails = user?.studentDetails
+  useEffect(() => {
+    fetchStaffProfile()
+  }, [])
+
+  const fetchStaffProfile = async () => {
+    try {
+      setIsLoadingProfile(true)
+      const response = await getStaffProfile()
+      if (response?.responseObject) {
+        setStaffProfile(response.responseObject)
+      }
+    } catch (error) {
+      console.error('Error fetching staff profile:', error)
+    } finally {
+      setIsLoadingProfile(false)
+    }
+  }
 
   // const handleEditProfile = () => {
   //   Alert.alert(
@@ -136,58 +154,122 @@ export default function ProfileScreen() {
     setConfirmPassword('')
   }
 
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A'
+    try {
+      return new Date(dateString).toLocaleDateString()
+    } catch {
+      return dateString
+    }
+  }
+
+  const formatBloodGroup = (bloodGrp?: string) => {
+    if (!bloodGrp) return 'N/A'
+    const mapping: Record<string, string> = {
+      O_POS: 'O+',
+      O_NEG: 'O-',
+      A_POS: 'A+',
+      A_NEG: 'A-',
+      B_POS: 'B+',
+      B_NEG: 'B-',
+      AB_POS: 'AB+',
+      AB_NEG: 'AB-',
+    }
+    return mapping[bloodGrp] || bloodGrp
+  }
+
+  const formatGender = (gender?: string) => {
+    if (!gender) return 'N/A'
+    return gender.charAt(0) + gender.slice(1).toLowerCase()
+  }
+
+  const fullName = staffProfile
+    ? `${staffProfile.firstName || ''} ${staffProfile.lastNme || ''}`.trim()
+    : 'N/A'
+
   const profileSections: ProfileSection[] = [
     {
       title: 'Personal Information',
       items: [
-        { label: 'Student Name', value: studentDetails?.name || 'N/A', icon: 'person.fill' },
-        { label: 'Email', value: user?.email || 'N/A', icon: 'envelope.fill' },
-        {
-          label: 'Roll Number',
-          value: studentDetails?.rollNo?.toString() || 'N/A',
-          icon: 'number',
-        },
-        {
-          label: 'Admission Number',
-          value: studentDetails?.admissionNo?.toString() || 'N/A',
-          icon: 'number',
-        },
+        { label: 'Name', value: fullName, icon: 'person.fill' },
+        { label: 'Email', value: staffProfile?.email || 'N/A', icon: 'envelope.fill' },
+        { label: 'Mobile', value: staffProfile?.mobileNo || 'N/A', icon: 'phone.fill' },
         {
           label: 'Date of Birth',
-          value: studentDetails?.dob ? new Date(studentDetails.dob).toLocaleDateString() : 'N/A',
+          value: formatDate(staffProfile?.dob),
           icon: 'calendar',
         },
-        { label: 'Gender', value: studentDetails?.gender || 'N/A', icon: 'person.fill' },
-        { label: 'Blood Group', value: studentDetails?.bloodGroup || 'N/A', icon: 'heart.fill' },
-        { label: 'Mobile', value: studentDetails?.mobile || 'N/A', icon: 'phone.fill' },
+        { label: 'Gender', value: formatGender(staffProfile?.gender), icon: 'person.fill' },
+        {
+          label: 'Blood Group',
+          value: formatBloodGroup(staffProfile?.bloodGrp),
+          icon: 'heart.fill',
+        },
+        {
+          label: 'Marital Status',
+          value: staffProfile?.married
+            ? staffProfile.married.charAt(0) + staffProfile.married.slice(1).toLowerCase()
+            : 'N/A',
+          icon: 'heart.fill',
+        },
       ],
     },
     {
-      title: 'Academic Details',
+      title: 'Employment Details',
       items: [
-        { label: 'Class', value: studentDetails?.className || 'N/A', icon: 'graduationcap.fill' },
-        { label: 'Section', value: studentDetails?.section || 'N/A', icon: 'text.alignleft' },
-        { label: 'Batch', value: studentDetails?.batchName || 'N/A', icon: 'calendar' },
+        { label: 'Employee Code', value: staffProfile?.empCode || 'N/A', icon: 'number' },
+        { label: 'Role', value: staffProfile?.role || 'N/A', icon: 'briefcase.fill' },
+        {
+          label: 'Date of Joining',
+          value: formatDate(staffProfile?.doj),
+          icon: 'calendar',
+        },
+        {
+          label: 'Job Status',
+          value: staffProfile?.jobStatus
+            ? staffProfile.jobStatus.charAt(0) + staffProfile.jobStatus.slice(1).toLowerCase()
+            : 'N/A',
+          icon: 'checkmark.circle.fill',
+        },
+        {
+          label: 'Job Type',
+          value: staffProfile?.jobType
+            ? staffProfile.jobType.charAt(0) + staffProfile.jobType.slice(1).toLowerCase()
+            : 'N/A',
+          icon: 'doc.text.fill',
+        },
       ],
     },
     {
-      title: 'Parent/Guardian Information',
+      title: 'Qualifications',
       items: [
-        { label: 'Father Name', value: studentDetails?.fatherName || 'N/A', icon: 'person.fill' },
-        { label: 'Mother Name', value: studentDetails?.motherName || 'N/A', icon: 'person.fill' },
+        {
+          label: 'Qualification',
+          value: staffProfile?.qualification || 'N/A',
+          icon: 'graduationcap.fill',
+        },
+        {
+          label: 'Degree',
+          value: staffProfile?.degree
+            ? staffProfile.degree.charAt(0) + staffProfile.degree.slice(1).toLowerCase()
+            : 'N/A',
+          icon: 'doc.fill',
+        },
       ],
     },
-    // {
-    //   title: 'Address Information',
-    //   items: [
-    //     { label: 'Address', value: studentDetails?.address || 'N/A', icon: 'house.fill' },
-    //     { label: 'House Name', value: studentDetails?.houseName || 'N/A', icon: 'house.fill' },
-    //     { label: 'District', value: studentDetails?.district || 'N/A', icon: 'mappin' },
-    //     { label: 'State', value: studentDetails?.state || 'N/A', icon: 'map' },
-    //     { label: 'Country', value: studentDetails?.country || 'N/A', icon: 'globe' },
-    //     { label: 'Pin Code', value: studentDetails?.pinCode || 'N/A', icon: 'number' },
-    //   ],
-    // },
+    {
+      title: 'Address',
+      items: [
+        {
+          label: 'Address',
+          value: staffProfile?.caddress?.addLineOne || 'N/A',
+          icon: 'house.fill',
+        },
+        { label: 'District', value: staffProfile?.caddress?.district || 'N/A', icon: 'mappin' },
+        { label: 'State', value: staffProfile?.caddress?.state || 'N/A', icon: 'map' },
+        { label: 'Pin Code', value: staffProfile?.caddress?.pinCode || 'N/A', icon: 'number' },
+      ],
+    },
   ]
 
   const actionButtons: ActionButton[] = [
@@ -217,100 +299,109 @@ export default function ProfileScreen() {
       style={[styles.container, { backgroundColor }]}
     >
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.profileHeader, {}]}>
-          <View style={styles.avatarContainer}>
-            {studentDetails?.imageUrl && !imageError ? (
-              <Image
-                source={{ uri: studentDetails.imageUrl }}
-                style={styles.avatar}
-                onError={() => setImageError(true)}
-              />
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: mutedColor }]}>
-                <IconSymbol name="person.fill" size={48} color="#ffffff" />
+        {isLoadingProfile ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={primaryColor} />
+          </View>
+        ) : (
+          <>
+            <View style={[styles.profileHeader, {}]}>
+              <View style={styles.avatarContainer}>
+                {staffProfile?.imageUrl && !imageError ? (
+                  <Image
+                    source={{ uri: staffProfile.imageUrl }}
+                    style={styles.avatar}
+                    onError={() => setImageError(true)}
+                  />
+                ) : (
+                  <View style={[styles.avatarPlaceholder, { backgroundColor: mutedColor }]}>
+                    <IconSymbol name="person.fill" size={48} color="#ffffff" />
+                  </View>
+                )}
               </View>
-            )}
-          </View>
-          <ThemedText style={[styles.studentName, { color: textColor }]}>
-            {studentDetails?.name || 'N/A'}
-          </ThemedText>
-          <ThemedText style={[styles.studentClass, { color: mutedColor }]}>
-            {studentDetails?.className || 'N/A'} - Section {studentDetails?.section || 'N/A'}
-          </ThemedText>
-          <ThemedText style={[styles.rollNumber, { color: mutedColor }]}>
-            Roll No: {studentDetails?.rollNo || 'N/A'}
-          </ThemedText>
-        </View>
-
-        {profileSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.section}>
-            <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-              {section.title}
-            </ThemedText>
-            <View style={[styles.sectionContent, { backgroundColor: cardBackground }]}>
-              {section.items.map((item, itemIndex) => (
-                <View
-                  key={itemIndex}
-                  style={[
-                    styles.infoRow,
-                    { borderBottomColor: borderColor },
-                    itemIndex === section.items.length - 1 && styles.lastActionButton,
-                  ]}
-                >
-                  <View style={styles.infoLeft}>
-                    <View style={[styles.iconContainer, { backgroundColor: borderColor }]}>
-                      <IconSymbol name={item.icon} size={16} color={mutedColor} />
-                    </View>
-                    <ThemedText style={[styles.infoLabel, { color: mutedColor }]}>
-                      {item.label}
-                    </ThemedText>
-                  </View>
-                  <ThemedText style={[styles.infoValue, { color: textColor }]}>
-                    {item.value}
-                  </ThemedText>
-                </View>
-              ))}
+              <ThemedText style={[styles.staffName, { color: textColor }]}>{fullName}</ThemedText>
+              <ThemedText style={[styles.staffRole, { color: mutedColor }]}>
+                {staffProfile?.role || 'Teacher'}
+              </ThemedText>
+              <ThemedText style={[styles.staffEmail, { color: mutedColor }]}>
+                {staffProfile?.email || 'N/A'}
+              </ThemedText>
             </View>
-          </View>
-        ))}
 
-        <View style={styles.actionsSection}>
-          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Actions</ThemedText>
-          <View style={[styles.actionsContent, { backgroundColor: cardBackground }]}>
-            {actionButtons.map((button, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.actionButton,
-                  { borderBottomColor: borderColor },
-                  index === actionButtons.length - 1 && styles.lastActionButton,
-                ]}
-                onPress={button.action}
-              >
-                <View style={styles.actionLeft}>
-                  <View
-                    style={[styles.actionIconContainer, { backgroundColor: `${button.color}20` }]}
-                  >
-                    <IconSymbol name={button.icon} size={20} color={button.color} />
-                  </View>
-                  <ThemedText style={[styles.actionTitle, { color: textColor }]}>
-                    {button.title}
-                  </ThemedText>
+            {profileSections.map((section, sectionIndex) => (
+              <View key={sectionIndex} style={styles.section}>
+                <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+                  {section.title}
+                </ThemedText>
+                <View style={[styles.sectionContent, { backgroundColor: cardBackground }]}>
+                  {section.items.map((item, itemIndex) => (
+                    <View
+                      key={itemIndex}
+                      style={[
+                        styles.infoRow,
+                        { borderBottomColor: borderColor },
+                        itemIndex === section.items.length - 1 && styles.lastActionButton,
+                      ]}
+                    >
+                      <View style={styles.infoLeft}>
+                        <View style={[styles.iconContainer, { backgroundColor: borderColor }]}>
+                          <IconSymbol name={item.icon} size={16} color={mutedColor} />
+                        </View>
+                        <ThemedText style={[styles.infoLabel, { color: mutedColor }]}>
+                          {item.label}
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={[styles.infoValue, { color: textColor }]}>
+                        {item.value}
+                      </ThemedText>
+                    </View>
+                  ))}
                 </View>
-                <IconSymbol name="chevron.right" size={16} color={mutedColor} />
-              </TouchableOpacity>
+              </View>
             ))}
-          </View>
-        </View>
 
-        <View style={styles.appInfo}>
-          <ThemedText style={[styles.appInfoText, { color: mutedColor }]}>
-            {APP_INFO.NAME} Teacher App v1.0.0
-          </ThemedText>
-          <ThemedText style={[styles.appInfoSubtext, { color: mutedColor }]}>
-            School Management System
-          </ThemedText>
-        </View>
+            <View style={styles.actionsSection}>
+              <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Actions</ThemedText>
+              <View style={[styles.actionsContent, { backgroundColor: cardBackground }]}>
+                {actionButtons.map((button, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.actionButton,
+                      { borderBottomColor: borderColor },
+                      index === actionButtons.length - 1 && styles.lastActionButton,
+                    ]}
+                    onPress={button.action}
+                  >
+                    <View style={styles.actionLeft}>
+                      <View
+                        style={[
+                          styles.actionIconContainer,
+                          { backgroundColor: `${button.color}20` },
+                        ]}
+                      >
+                        <IconSymbol name={button.icon} size={20} color={button.color} />
+                      </View>
+                      <ThemedText style={[styles.actionTitle, { color: textColor }]}>
+                        {button.title}
+                      </ThemedText>
+                    </View>
+                    <IconSymbol name="chevron.right" size={16} color={mutedColor} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.appInfo}>
+              <ThemedText style={[styles.appInfoText, { color: mutedColor }]}>
+                {APP_INFO.NAME} Teacher App v1.0.0
+              </ThemedText>
+              <ThemedText style={[styles.appInfoSubtext, { color: mutedColor }]}>
+                School Management System
+              </ThemedText>
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <Modal
@@ -437,16 +528,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  studentName: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+  },
+  staffName: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  studentClass: {
+  staffRole: {
     fontSize: 16,
     marginBottom: 2,
   },
-  rollNumber: {
+  staffEmail: {
     fontSize: 14,
   },
   section: {

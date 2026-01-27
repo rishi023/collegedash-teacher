@@ -65,8 +65,8 @@ function LayoutContent() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
-          name="grades"
-          options={{ headerShown: true, headerTitle: 'Grades & Marks' }}
+          name="self-attendance"
+          options={{ headerShown: true, headerTitle: 'Self Attendance' }}
         />
         <Stack.Screen
           name="attendance"

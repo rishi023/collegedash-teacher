@@ -63,7 +63,12 @@ export default function DashboardScreen() {
   }, [user?.studentDetails?.institutionId])
 
   const quickActions: Action[] = [
-    { title: 'Grades', icon: 'chart.bar.fill', route: '/grades', color: successColor },
+    {
+      title: 'My Attendance',
+      icon: 'checkmark.circle.fill',
+      route: '/staff-attendance',
+      color: successColor,
+    },
     { title: 'Attendance', icon: 'calendar', route: '/attendance', color: warningColor },
     { title: 'E-Content', icon: 'book.fill', route: '/e-content', color: errorColor },
     { title: 'Assignments', icon: 'book.fill', route: '/assignments', color: primaryColor },

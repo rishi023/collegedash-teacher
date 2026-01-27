@@ -1,17 +1,8 @@
-import { api } from './axios'
+import { api, ApiResponse } from './axios'
 
 interface LoginPayload {
   username: string
   password: string
-}
-
-interface ApiResponse<T> {
-  status: string
-  timeStamp: string
-  message: string
-  debugMessage: string
-  apiResponseStatus: string
-  responseObject: T
 }
 
 type LoginResponse = ApiResponse<{
@@ -203,22 +194,130 @@ interface ChangePasswordPayload {
   newPassword: string
 }
 
-interface ChangePasswordResponseObject {
-  timeStamp: string
-  responseObject: boolean
-  apiResponseStatus: {
-    code: number
-    message: string
-  }
-  planActive: boolean
-  userDisabled: boolean
+export const changePassword = async (payload: ChangePasswordPayload) => {
+  const res = await api.put<boolean>('/v1/users/password/change', payload)
+  return res
 }
 
-export const changePassword = async (payload: ChangePasswordPayload) => {
-  const res: ChangePasswordResponseObject | null = await api.put(
-    '/v1/users/password/change',
-    payload
-  )
+// Staff Profile Types
+export interface StaffAddress {
+  country: string
+  state: string
+  city: string
+  district: string
+  pinCode: string
+  addLineOne: string
+  addLineTwo: string
+  landmark: string
+}
+
+export interface StaffAccount {
+  bankName: string
+  bankAccountName: string
+  bankBranch: string
+  ifscCode: string
+  pfAccNo: string
+  esiAccNo: string
+  active: string
+}
+
+export interface StaffLoginDetails {
+  loginId: string
+  password: string
+  userId: string
+}
+
+export interface StaffParentsDetails {
+  fatherName: string
+  motherName: string
+  motherAadhar: string
+  fatherAadhar: string
+  fatherEducation: string
+  fatherPhotoUrl: string
+  motherPhotoUrl: string
+  motherEducation: string
+  legalGuardianName: string
+  familyAnnualIncome: string
+  fatherOccupation: string
+  motherOccupation: string
+}
+
+export interface StaffProfile {
+  id: string
+  userId: string
+  institutionId: string
+  empCode: string
+  firstName: string
+  lastNme: string
+  imageUrl: string
+  gender: string
+  mobileNo: string
+  email: string
+  alternateNo: string
+  dob: string
+  doj: string
+  bloodGrp: string
+  panCardNo: string
+  aadharNo: string
+  qualification: string
+  degree: string
+  married: string
+  jobStatus: string
+  jobType: string
+  jobFunction: string | null
+  role: string
+  account: StaffAccount
+  loginDetails: StaffLoginDetails
+  sendSms: boolean
+  sendWelcomeSms: boolean
+  parentsDetails: StaffParentsDetails
+  familyMemberList: unknown[]
+  active: boolean
+  deactivatedForReason: string | null
+  deactivatedRemarks: string | null
+  activatedRemarks: string | null
+  caddress: StaffAddress
+  paddress: StaffAddress
+}
+
+export const getStaffProfile = async () => {
+  const res = await api.get<StaffProfile>('/v1/staff/profile')
+  return res
+}
+
+// Staff Attendance Types
+export interface StaffAttendance {
+  id?: string
+  staffId: string
+  institutionId: string
+  name: string
+  code: string
+  inTime: string
+  outTime: string
+  attendanceDate: string
+  remarks: string
+}
+
+export interface StaffAttendancePayload {
+  staffId: string
+  institutionId: string
+  name: string
+  code: string
+  inTime: string
+  outTime: string
+  attendanceDate: string
+  remarks: string
+}
+
+export const markStaffAttendance = async (payload: StaffAttendancePayload) => {
+  const res = await api.post<StaffAttendance>('/v1/staff/attendance', payload)
+  return res
+}
+
+export const getStaffAttendance = async (staffId: string, date?: string) => {
+  const params: Record<string, string> = { staffId }
+  if (date) params.attendanceDate = date
+  const res = await api.get<StaffAttendance[]>('/v1/staff/attendance', { params })
   return res
 }
 
@@ -254,19 +353,8 @@ export interface Term {
   holidayCount: number
 }
 
-interface TermsResponseObject {
-  timeStamp: string
-  responseObject: Term[]
-  apiResponseStatus: {
-    code: number
-    message: string
-  }
-  planActive: boolean
-  userDisabled: boolean
-}
-
 export const getTerms = async (institutionId: string) => {
-  const res: TermsResponseObject | null = await api.get('/v1/exams/es/term/all', {
+  const res = await api.get<Term[]>('/v1/exams/es/term/all', {
     params: { institutionId },
   })
   return res
