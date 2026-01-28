@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/ThemedText'
+import StudentAttendanceReport from '@/components/attendance/StudentAttendanceReport'
 import ViewAttendance from '@/components/attendance/ViewAttendance'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { api } from '@/services/axios'
@@ -17,7 +18,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-type TabType = 'add' | 'view'
+type TabType = 'add' | 'view' | 'report'
 
 export default function AttendanceScreen() {
   const backgroundColor = useThemeColor({}, 'secondary')
@@ -324,7 +325,24 @@ export default function AttendanceScreen() {
               activeTab === 'view' && styles.tabTextActive,
             ]}
           >
-            View Attendance
+            View
+          </ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'report' && { borderBottomColor: primaryColor, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab('report')}
+        >
+          <ThemedText
+            style={[
+              styles.tabText,
+              { color: activeTab === 'report' ? primaryColor : mutedColor },
+              activeTab === 'report' && styles.tabTextActive,
+            ]}
+          >
+            Register
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -332,6 +350,8 @@ export default function AttendanceScreen() {
       {/* Tab Content */}
       {activeTab === 'view' ? (
         <ViewAttendance />
+      ) : activeTab === 'report' ? (
+        <StudentAttendanceReport />
       ) : (
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Filter Card */}

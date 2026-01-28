@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/ThemedText'
+import StaffAttendanceReport from '@/components/attendance/StaffAttendanceReport'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import {
@@ -21,6 +22,8 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+type TabType = 'mark' | 'report'
+
 export default function StaffAttendanceScreen() {
   // Theme colors
   const backgroundColor = useThemeColor({}, 'secondary')
@@ -31,6 +34,9 @@ export default function StaffAttendanceScreen() {
   const borderColor = useThemeColor({}, 'border')
   const successColor = useThemeColor({}, 'success')
   const errorColor = useThemeColor({}, 'error')
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabType>('mark')
 
   // State
   const [loading, setLoading] = useState(true)
@@ -227,7 +233,49 @@ export default function StaffAttendanceScreen() {
       edges={{ top: 'off', bottom: 'additive' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      {/* Tab Bar */}
+      <View style={[styles.tabBar, { backgroundColor: cardBackground, borderBottomColor: borderColor }]}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'mark' && { borderBottomColor: primaryColor, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab('mark')}
+        >
+          <ThemedText
+            style={[
+              styles.tabText,
+              { color: activeTab === 'mark' ? primaryColor : mutedColor },
+              activeTab === 'mark' && styles.tabTextActive,
+            ]}
+          >
+            Mark Attendance
+          </ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'report' && { borderBottomColor: primaryColor, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab('report')}
+        >
+          <ThemedText
+            style={[
+              styles.tabText,
+              { color: activeTab === 'report' ? primaryColor : mutedColor },
+              activeTab === 'report' && styles.tabTextActive,
+            ]}
+          >
+            Staff Report
+          </ThemedText>
+        </TouchableOpacity>
+      </View>
+
+      {/* Tab Content */}
+      {activeTab === 'report' ? (
+        <StaffAttendanceReport />
+      ) : (
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Staff Info Card */}
         <View style={[styles.card, { backgroundColor: cardBackground }]}>
           <View style={styles.staffInfoHeader}>
@@ -357,6 +405,7 @@ export default function StaffAttendanceScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+      )}
 
       {/* Time Picker Modal */}
       <Modal visible={showTimePicker} transparent animationType="fade">
@@ -484,6 +533,21 @@ const styles = StyleSheet.create({
   center: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  tabText: {
+    fontSize: 14,
+  },
+  tabTextActive: {
+    fontWeight: '600',
   },
   content: {
     flex: 1,

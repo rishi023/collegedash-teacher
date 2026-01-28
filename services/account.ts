@@ -321,6 +321,17 @@ export const getStaffAttendance = async (staffId: string, date?: string) => {
   return res
 }
 
+export const getStaffAttendanceReport = async (
+  staffId: string,
+  startDate: string,
+  endDate: string,
+) => {
+  const res = await api.get<StaffAttendance[]>(`/v1/staff/${staffId}/attendance`, {
+    params: { startDate, endDate },
+  })
+  return res
+}
+
 export interface Subject {
   className: string
   classId: string
