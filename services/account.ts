@@ -105,7 +105,7 @@ type HomeworkResponse = ApiResponse<HomeworkData>
 
 export const getHomeworkByDay = async (classId: string, section: string, date: string) => {
   const res: HomeworkResponse | null = await api.get(
-    `/v1/homework/day?classId=${classId}&section=${section}&date=${date}`
+    `/v1/homework/day?classId=${classId}&section=${section}&date=${date}`,
   )
   return res
 }
@@ -129,10 +129,10 @@ export const getStudentAttendance = async (
   section: string,
   studentId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
 ) => {
   const res: AttendanceResponse | null = await api.get(
-    `/v1/attendance/class/${classId}/section/${section}/student/${studentId}?startDate=${startDate}&endDate=${endDate}`
+    `/v1/attendance/class/${classId}/section/${section}/student/${studentId}?startDate=${startDate}&endDate=${endDate}`,
   )
   return res
 }
@@ -307,6 +307,8 @@ export interface StaffAttendancePayload {
   outTime: string
   attendanceDate: string
   remarks: string
+  latitude?: number
+  longitude?: number
 }
 
 export const markStaffAttendance = async (payload: StaffAttendancePayload) => {
@@ -314,10 +316,19 @@ export const markStaffAttendance = async (payload: StaffAttendancePayload) => {
   return res
 }
 
-export const getStaffAttendance = async (staffId: string, date?: string) => {
-  const params: Record<string, string> = { staffId }
-  if (date) params.attendanceDate = date
-  const res = await api.get<StaffAttendance[]>('/v1/staff/attendance', { params })
+export const updateStaffAttendance = async (payload: StaffAttendancePayload & { id: string }) => {
+  const res = await api.put<StaffAttendance>('/v1/staff/attendance', payload)
+  return res
+}
+
+export const getStaffAttendanceByDate = async (
+  // staffId: string,
+  startDate: string,
+  // endDate: string
+) => {
+  const res = await api.get<StaffAttendance[]>(`/v1/staff/attendance/day`, {
+    params: { startDate },
+  })
   return res
 }
 
@@ -445,7 +456,7 @@ export const getStudentPaymentRecords = async (batchId: string, studentId: strin
     '/v1/app/student/student/payment/record',
     {
       params: { batchId, studentId },
-    }
+    },
   )
   return res
 }

@@ -1,19 +1,23 @@
 import { ThemedText } from '@/components/ThemedText'
 import StaffAttendanceReport from '@/components/attendance/StaffAttendanceReport'
 import { IconSymbol } from '@/components/ui/IconSymbol'
+import { OFFICE_LOCATION } from '@/constants'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import {
+  getStaffAttendanceByDate,
   getStaffProfile,
   markStaffAttendance,
   StaffAttendancePayload,
+  updateStaffAttendance,
 } from '@/services/account'
 import { storage } from '@/services/storage'
+import * as Location from 'expo-location'
+import { getDistance } from 'geolib'
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Modal,
-  Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -24,7 +28,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 type TabType = 'mark' | 'report'
 
-export default function StaffAttendanceScreen() {
+interface LocationState {
+  latitude: number
+  longitude: number
+  accuracy: number | null
+}
+
+export default function SelfAttendanceScreen() {
   // Theme colors
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -46,21 +56,30 @@ export default function StaffAttendanceScreen() {
   const [staffName, setStaffName] = useState('')
   const [staffCode, setStaffCode] = useState('')
 
+  // Location state
+  const [location, setLocation] = useState<LocationState | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [distance, setDistance] = useState<number | null>(null)
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
   // Attendance form state
   const [attendanceDate, setAttendanceDate] = useState(formatDate(new Date()))
   const [inTime, setInTime] = useState('')
   const [outTime, setOutTime] = useState('')
   const [remarks, setRemarks] = useState('')
 
-  // Time picker modal state
-  const [showTimePicker, setShowTimePicker] = useState(false)
-  const [timePickerField, setTimePickerField] = useState<'in' | 'out'>('in')
-  const [selectedHour, setSelectedHour] = useState('09')
-  const [selectedMinute, setSelectedMinute] = useState('00')
-  const [selectedPeriod, setSelectedPeriod] = useState<'AM' | 'PM'>('AM')
+  // Existing attendance state
+  const [existingAttendanceId, setExistingAttendanceId] = useState<string | null>(null)
+  const [fetchingAttendance, setFetchingAttendance] = useState(false)
+
+  // Location check
+  const isWithinRadius = distance !== null && distance <= OFFICE_LOCATION.radius
+  const canMarkAttendance = isWithinRadius && location !== null && !isLoadingLocation
 
   useEffect(() => {
     loadStaffData()
+    getCurrentLocation()
   }, [])
 
   function formatDate(date: Date): string {
@@ -84,6 +103,15 @@ export default function StaffAttendanceScreen() {
     }
   }
 
+  function getCurrentTimeString(): string {
+    const now = new Date()
+    let hours = now.getHours()
+    const minutes = now.getMinutes()
+    const period = hours >= 12 ? 'PM' : 'AM'
+    hours = hours % 12 || 12
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`
+  }
+
   const loadStaffData = async () => {
     try {
       setLoading(true)
@@ -101,6 +129,9 @@ export default function StaffAttendanceScreen() {
         setStaffId(profile.id)
         setStaffName(`${profile.firstName || ''} ${profile.lastNme || ''}`.trim())
         setStaffCode(profile.empCode || '')
+
+        // Fetch today's attendance after getting staff ID
+        await fetchTodayAttendance(profile.id)
       }
     } catch (error) {
       console.error('Error loading staff data:', error)
@@ -110,47 +141,158 @@ export default function StaffAttendanceScreen() {
     }
   }
 
-  const openTimePicker = (field: 'in' | 'out') => {
-    setTimePickerField(field)
-    const currentTime = field === 'in' ? inTime : outTime
+  const fetchTodayAttendance = async (staffIdParam?: string) => {
+    const id = staffIdParam || staffId
+    if (!id) return
 
-    if (currentTime) {
-      // Parse existing time
-      const match = currentTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-      if (match) {
-        setSelectedHour(match[1].padStart(2, '0'))
-        setSelectedMinute(match[2])
-        setSelectedPeriod(match[3].toUpperCase() as 'AM' | 'PM')
-      }
-    } else {
-      // Set defaults
-      if (field === 'in') {
-        setSelectedHour('09')
-        setSelectedMinute('00')
-        setSelectedPeriod('AM')
+    setFetchingAttendance(true)
+    try {
+      const today = formatDate(new Date())
+      const res = await getStaffAttendanceByDate(today)
+
+      if (res?.responseObject && res.responseObject.length > 0) {
+        // Filter to find current staff's attendance record
+        const attendance = res.responseObject.find((record) => record.staffId === id)
+
+        if (attendance && attendance.id) {
+          // Attendance already marked for today (has id)
+          setExistingAttendanceId(attendance.id)
+          setInTime(attendance.inTime || '')
+          setOutTime(attendance.outTime || '')
+          setRemarks(attendance.remarks || '')
+        } else {
+          // No attendance marked yet (id is null or record not found)
+          setExistingAttendanceId(null)
+          setInTime('')
+          setOutTime('')
+          setRemarks('')
+        }
       } else {
-        setSelectedHour('05')
-        setSelectedMinute('00')
-        setSelectedPeriod('PM')
+        // No attendance for today
+        setExistingAttendanceId(null)
+        setInTime('')
+        setOutTime('')
+        setRemarks('')
       }
+    } catch (error) {
+      console.error('Error fetching today attendance:', error)
+    } finally {
+      setFetchingAttendance(false)
     }
-
-    setShowTimePicker(true)
   }
 
-  const confirmTime = () => {
-    const timeString = `${selectedHour}:${selectedMinute} ${selectedPeriod}`
-    if (timePickerField === 'in') {
-      setInTime(timeString)
-    } else {
-      setOutTime(timeString)
+  const getCurrentLocation = async () => {
+    setIsLoadingLocation(true)
+    setLocationError(null)
+    setLocation(null)
+    setDistance(null)
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+
+      if (status !== 'granted') {
+        setLocationError('Location permission denied')
+        setIsLoadingLocation(false)
+        return
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      })
+
+      const { latitude, longitude, accuracy } = currentLocation.coords
+      setLocation({ latitude, longitude, accuracy })
+
+      // Calculate distance from office
+      const distanceFromOffice = getDistance(
+        { latitude, longitude },
+        { latitude: OFFICE_LOCATION.latitude, longitude: OFFICE_LOCATION.longitude },
+      )
+
+      setDistance(distanceFromOffice)
+    } catch (error) {
+      console.error('Error getting location:', error)
+      setLocationError('Unable to get location')
+    } finally {
+      setIsLoadingLocation(false)
     }
-    setShowTimePicker(false)
   }
 
-  const handleMarkAttendance = async () => {
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await Promise.all([getCurrentLocation(), fetchTodayAttendance()])
+    setIsRefreshing(false)
+  }
+
+  const getStatusColor = (): string => {
+    if (isLoadingLocation) return mutedColor
+    if (!location || locationError) return '#ef4444'
+    if (isWithinRadius) return '#10b981'
+    return '#ef4444'
+  }
+
+  const markInNow = () => {
+    if (!canMarkAttendance) {
+      if (!location) {
+        Alert.alert('Location Required', 'Please enable location services.')
+      } else if (!isWithinRadius) {
+        Alert.alert(
+          'Outside Campus',
+          `You are ${distance?.toFixed(0)}m away. Move within ${OFFICE_LOCATION.radius}m.`,
+        )
+      }
+      return
+    }
+
+    if (inTime) {
+      Alert.alert('Already Marked', 'In-time is already marked for today.')
+      return
+    }
+
+    setInTime(getCurrentTimeString())
+  }
+
+  const markOutNow = () => {
+    if (!canMarkAttendance) {
+      if (!location) {
+        Alert.alert('Location Required', 'Please enable location services.')
+      } else if (!isWithinRadius) {
+        Alert.alert(
+          'Outside Campus',
+          `You are ${distance?.toFixed(0)}m away. Move within ${OFFICE_LOCATION.radius}m.`,
+        )
+      }
+      return
+    }
+
     if (!inTime) {
-      Alert.alert('Error', 'Please select in-time')
+      Alert.alert('Mark In-Time First', 'Please mark your in-time before marking out-time.')
+      return
+    }
+
+    if (outTime) {
+      Alert.alert('Already Marked', 'Out-time is already marked for today.')
+      return
+    }
+
+    setOutTime(getCurrentTimeString())
+  }
+
+  const handleSaveAttendance = async () => {
+    if (!canMarkAttendance) {
+      if (!location) {
+        Alert.alert('Location Required', 'Please enable location services and try again.')
+      } else if (!isWithinRadius) {
+        Alert.alert(
+          'Outside Campus',
+          `You are ${distance?.toFixed(0)}m away from campus. Move within ${OFFICE_LOCATION.radius}m to mark attendance.`,
+        )
+      }
+      return
+    }
+
+    if (!inTime) {
+      Alert.alert('Error', 'Please mark your in-time first by pressing the "In Now" button.')
       return
     }
 
@@ -171,59 +313,66 @@ export default function StaffAttendanceScreen() {
         outTime: outTime || '',
         attendanceDate,
         remarks: remarks.trim(),
+        latitude: location?.latitude,
+        longitude: location?.longitude,
       }
 
-      const response = await markStaffAttendance(payload)
+      let response
+
+      if (existingAttendanceId) {
+        // Update existing attendance (PUT)
+        response = await updateStaffAttendance({ ...payload, id: existingAttendanceId })
+      } else {
+        // Create new attendance (POST)
+        response = await markStaffAttendance(payload)
+      }
 
       if (response?.responseObject) {
-        Alert.alert('Success', 'Attendance marked successfully!', [
+        const successMessage = existingAttendanceId
+          ? 'Attendance updated successfully!'
+          : 'Attendance marked successfully!'
+
+        Alert.alert('Success', successMessage, [
           {
             text: 'OK',
             onPress: () => {
-              // Reset form for next entry
-              setRemarks('')
+              // Refresh to get updated data
+              fetchTodayAttendance()
             },
           },
         ])
       } else {
-        Alert.alert('Error', response?.message || 'Failed to mark attendance')
+        Alert.alert('Error', response?.message || 'Failed to save attendance')
       }
     } catch (error) {
-      console.error('Error marking attendance:', error)
-      Alert.alert('Error', 'Failed to mark attendance. Please try again.')
+      console.error('Error saving attendance:', error)
+      Alert.alert('Error', 'Failed to save attendance. Please try again.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  const markInNow = () => {
-    const now = new Date()
-    let hours = now.getHours()
-    const minutes = now.getMinutes()
-    const period = hours >= 12 ? 'PM' : 'AM'
-    hours = hours % 12 || 12
-    setInTime(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`)
-  }
+  // Determine button states
+  const canMarkIn = canMarkAttendance && !inTime
+  const canMarkOut = canMarkAttendance && inTime && !outTime
+  const canSave =
+    canMarkAttendance &&
+    inTime &&
+    (!existingAttendanceId || (existingAttendanceId && !outTime && outTime !== ''))
 
-  const markOutNow = () => {
-    const now = new Date()
-    let hours = now.getHours()
-    const minutes = now.getMinutes()
-    const period = hours >= 12 ? 'PM' : 'AM'
-    hours = hours % 12 || 12
-    setOutTime(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`)
+  // Determine save button text
+  const getSaveButtonText = () => {
+    if (existingAttendanceId) {
+      return outTime ? 'Update Attendance' : 'Save Out Time'
+    }
+    return 'Save In Time'
   }
-
-  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
-  const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center, { backgroundColor }]}>
         <ActivityIndicator size="large" color={primaryColor} />
-        <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
-          Loading staff data...
-        </ThemedText>
+        <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading...</ThemedText>
       </SafeAreaView>
     )
   }
@@ -234,7 +383,9 @@ export default function StaffAttendanceScreen() {
       style={[styles.container, { backgroundColor }]}
     >
       {/* Tab Bar */}
-      <View style={[styles.tabBar, { backgroundColor: cardBackground, borderBottomColor: borderColor }]}>
+      <View
+        style={[styles.tabBar, { backgroundColor: cardBackground, borderBottomColor: borderColor }]}
+      >
         <TouchableOpacity
           style={[
             styles.tab,
@@ -266,7 +417,7 @@ export default function StaffAttendanceScreen() {
               activeTab === 'report' && styles.tabTextActive,
             ]}
           >
-            Staff Report
+            My Report
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -275,253 +426,268 @@ export default function StaffAttendanceScreen() {
       {activeTab === 'report' ? (
         <StaffAttendanceReport />
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Staff Info Card */}
-        <View style={[styles.card, { backgroundColor: cardBackground }]}>
-          <View style={styles.staffInfoHeader}>
-            <View style={[styles.avatarPlaceholder, { backgroundColor: primaryColor + '20' }]}>
-              <IconSymbol name="person.fill" size={32} color={primaryColor} />
-            </View>
-            <View style={styles.staffDetails}>
-              <ThemedText style={[styles.staffName, { color: textColor }]}>
-                {staffName || 'N/A'}
-              </ThemedText>
-              <ThemedText style={[styles.staffCode, { color: mutedColor }]}>
-                Employee Code: {staffCode || 'N/A'}
-              </ThemedText>
-            </View>
-          </View>
-        </View>
-
-        {/* Date Card */}
-        <View style={[styles.card, { backgroundColor: cardBackground }]}>
-          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-            Attendance Date
-          </ThemedText>
-          <View style={[styles.dateDisplay, { backgroundColor, borderColor }]}>
-            <IconSymbol name="calendar" size={20} color={primaryColor} />
-            <ThemedText style={[styles.dateText, { color: textColor }]}>
-              {formatDisplayDate(attendanceDate)}
-            </ThemedText>
-          </View>
-        </View>
-
-        {/* Time Entry Card */}
-        <View style={[styles.card, { backgroundColor: cardBackground }]}>
-          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-            Mark Attendance
-          </ThemedText>
-
-          {/* In Time */}
-          <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <ThemedText style={[styles.label, { color: textColor }]}>In Time *</ThemedText>
-              <TouchableOpacity
-                style={[styles.timeInput, { backgroundColor, borderColor }]}
-                onPress={() => openTimePicker('in')}
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
+        >
+          {/* Location Status Card */}
+          <View style={[styles.card, { backgroundColor: cardBackground }]}>
+            <View style={styles.locationHeader}>
+              <View
+                style={[styles.locationIconContainer, { backgroundColor: `${getStatusColor()}20` }]}
               >
-                <IconSymbol name="clock.fill" size={18} color={successColor} />
-                <ThemedText
-                  style={[styles.timeText, { color: inTime ? textColor : mutedColor }]}
-                >
-                  {inTime || 'Select Time'}
+                <IconSymbol name="location.fill" size={24} color={getStatusColor()} />
+              </View>
+              <View style={styles.locationInfo}>
+                <ThemedText style={[styles.locationTitle, { color: textColor }]}>
+                  Location Status
                 </ThemedText>
-              </TouchableOpacity>
+                <ThemedText style={[styles.locationStatusText, { color: getStatusColor() }]}>
+                  {isLoadingLocation
+                    ? 'Detecting location...'
+                    : locationError
+                      ? locationError
+                      : !location
+                        ? 'Location not available'
+                        : isWithinRadius
+                          ? 'Within campus - Ready'
+                          : `Outside campus (${distance?.toFixed(0)}m away)`}
+                </ThemedText>
+              </View>
             </View>
-            <TouchableOpacity
-              style={[styles.nowButton, { backgroundColor: successColor }]}
-              onPress={markInNow}
+
+            {/* Current Location Panel */}
+            <View
+              style={[
+                styles.locationPanel,
+                { backgroundColor: `${getStatusColor()}10`, borderColor: getStatusColor() },
+              ]}
             >
-              <ThemedText style={styles.nowButtonText}>Now</ThemedText>
+              <ThemedText style={[styles.locationPanelTitle, { color: textColor }]}>
+                Current Location
+              </ThemedText>
+              <ThemedText
+                style={[styles.locationLine, { color: location ? textColor : '#ef4444' }]}
+              >
+                {location
+                  ? `Lat: ${location.latitude.toFixed(4)}, Lng: ${location.longitude.toFixed(4)}`
+                  : 'NOT DETECTED'}
+              </ThemedText>
+              <ThemedText
+                style={[styles.locationLine, { color: isWithinRadius ? '#10b981' : '#ef4444' }]}
+              >
+                Distance: {distance !== null ? `${distance.toFixed(0)}m` : 'N/A'} (Allowed:{' '}
+                {OFFICE_LOCATION.radius}m)
+              </ThemedText>
+              <ThemedText
+                style={[
+                  styles.locationLine,
+                  { color: canMarkAttendance ? '#10b981' : '#ef4444', fontWeight: '600' },
+                ]}
+              >
+                Status: {canMarkAttendance ? 'Ready to mark attendance' : 'Cannot mark attendance'}
+              </ThemedText>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.refreshLocationButton, { borderColor }]}
+              onPress={getCurrentLocation}
+              disabled={isLoadingLocation}
+            >
+              {isLoadingLocation ? (
+                <ActivityIndicator size="small" color={primaryColor} />
+              ) : (
+                <>
+                  <IconSymbol name="arrow.clockwise" size={16} color={primaryColor} />
+                  <ThemedText style={[styles.refreshLocationText, { color: primaryColor }]}>
+                    Refresh Location
+                  </ThemedText>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* Out Time */}
-          <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <ThemedText style={[styles.label, { color: textColor }]}>Out Time</ThemedText>
-              <TouchableOpacity
-                style={[styles.timeInput, { backgroundColor, borderColor }]}
-                onPress={() => openTimePicker('out')}
-              >
-                <IconSymbol name="clock.fill" size={18} color={errorColor} />
-                <ThemedText
-                  style={[styles.timeText, { color: outTime ? textColor : mutedColor }]}
-                >
-                  {outTime || 'Select Time'}
+          {/* Staff Info Card */}
+          <View style={[styles.card, { backgroundColor: cardBackground }]}>
+            <View style={styles.staffInfoHeader}>
+              <View style={[styles.avatarPlaceholder, { backgroundColor: primaryColor + '20' }]}>
+                <IconSymbol name="person.fill" size={32} color={primaryColor} />
+              </View>
+              <View style={styles.staffDetails}>
+                <ThemedText style={[styles.staffName, { color: textColor }]}>
+                  {staffName || 'N/A'}
                 </ThemedText>
-              </TouchableOpacity>
+                <ThemedText style={[styles.staffCode, { color: mutedColor }]}>
+                  Employee Code: {staffCode || 'N/A'}
+                </ThemedText>
+              </View>
             </View>
-            <TouchableOpacity
-              style={[styles.nowButton, { backgroundColor: errorColor }]}
-              onPress={markOutNow}
-            >
-              <ThemedText style={styles.nowButtonText}>Now</ThemedText>
-            </TouchableOpacity>
           </View>
 
-          {/* Remarks */}
-          <View style={styles.fieldContainer}>
-            <ThemedText style={[styles.label, { color: textColor }]}>
-              Remarks (Optional)
+          {/* Date Card */}
+          <View style={[styles.card, { backgroundColor: cardBackground }]}>
+            <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+              Attendance Date
             </ThemedText>
-            <TextInput
-              style={[styles.remarksInput, { backgroundColor, borderColor, color: textColor }]}
-              value={remarks}
-              onChangeText={setRemarks}
-              placeholder="Enter any remarks..."
-              placeholderTextColor={mutedColor}
-              multiline
-              numberOfLines={3}
-            />
+            <View style={[styles.dateDisplay, { backgroundColor, borderColor }]}>
+              <IconSymbol name="calendar" size={20} color={primaryColor} />
+              <ThemedText style={[styles.dateText, { color: textColor }]}>
+                {formatDisplayDate(attendanceDate)}
+              </ThemedText>
+            </View>
           </View>
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              { backgroundColor: primaryColor },
-              submitting && styles.submitButtonDisabled,
-            ]}
-            onPress={handleMarkAttendance}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <IconSymbol name="checkmark.circle.fill" size={20} color="#fff" />
-                <ThemedText style={styles.submitButtonText}>Mark Attendance</ThemedText>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+          {/* Attendance Status Card */}
+          {fetchingAttendance ? (
+            <View style={[styles.card, { backgroundColor: cardBackground }]}>
+              <ActivityIndicator size="small" color={primaryColor} />
+              <ThemedText style={[styles.fetchingText, { color: mutedColor }]}>
+                Checking today's attendance...
+              </ThemedText>
+            </View>
+          ) : (
+            <View style={[styles.card, { backgroundColor: cardBackground }]}>
+              <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+                {existingAttendanceId ? "Today's Attendance" : 'Mark Attendance'}
+              </ThemedText>
 
-        {/* Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: primaryColor + '10' }]}>
-          <IconSymbol name="info.circle.fill" size={20} color={primaryColor} />
-          <ThemedText style={[styles.infoText, { color: textColor }]}>
-            You can mark your in-time when you arrive and update with out-time when you leave.
-          </ThemedText>
-        </View>
-      </ScrollView>
-      )}
-
-      {/* Time Picker Modal */}
-      <Modal visible={showTimePicker} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
-            <ThemedText style={[styles.modalTitle, { color: textColor }]}>
-              Select {timePickerField === 'in' ? 'In' : 'Out'} Time
-            </ThemedText>
-
-            <View style={styles.pickerContainer}>
-              {/* Hour Picker */}
-              <View style={styles.pickerColumn}>
-                <ThemedText style={[styles.pickerLabel, { color: mutedColor }]}>Hour</ThemedText>
-                <ScrollView
-                  style={[styles.pickerScroll, { borderColor }]}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {hours.map(hour => (
-                    <TouchableOpacity
-                      key={hour}
-                      style={[
-                        styles.pickerItem,
-                        selectedHour === hour && { backgroundColor: primaryColor + '20' },
-                      ]}
-                      onPress={() => setSelectedHour(hour)}
-                    >
-                      <ThemedText
-                        style={[
-                          styles.pickerItemText,
-                          { color: selectedHour === hour ? primaryColor : textColor },
-                          selectedHour === hour && styles.pickerItemTextSelected,
-                        ]}
-                      >
-                        {hour}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Minute Picker */}
-              <View style={styles.pickerColumn}>
-                <ThemedText style={[styles.pickerLabel, { color: mutedColor }]}>Minute</ThemedText>
-                <ScrollView
-                  style={[styles.pickerScroll, { borderColor }]}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {minutes.map(minute => (
-                    <TouchableOpacity
-                      key={minute}
-                      style={[
-                        styles.pickerItem,
-                        selectedMinute === minute && { backgroundColor: primaryColor + '20' },
-                      ]}
-                      onPress={() => setSelectedMinute(minute)}
-                    >
-                      <ThemedText
-                        style={[
-                          styles.pickerItemText,
-                          { color: selectedMinute === minute ? primaryColor : textColor },
-                          selectedMinute === minute && styles.pickerItemTextSelected,
-                        ]}
-                      >
-                        {minute}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* AM/PM Picker */}
-              <View style={styles.pickerColumn}>
-                <ThemedText style={[styles.pickerLabel, { color: mutedColor }]}>Period</ThemedText>
-                <View style={[styles.periodPicker, { borderColor }]}>
-                  {(['AM', 'PM'] as const).map(period => (
-                    <TouchableOpacity
-                      key={period}
-                      style={[
-                        styles.periodItem,
-                        selectedPeriod === period && { backgroundColor: primaryColor },
-                      ]}
-                      onPress={() => setSelectedPeriod(period)}
-                    >
-                      <ThemedText
-                        style={[
-                          styles.periodItemText,
-                          { color: selectedPeriod === period ? '#fff' : textColor },
-                        ]}
-                      >
-                        {period}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  ))}
+              {existingAttendanceId && (
+                <View style={[styles.statusBadge, { backgroundColor: successColor + '20' }]}>
+                  <IconSymbol name="checkmark.circle.fill" size={16} color={successColor} />
+                  <ThemedText style={[styles.statusBadgeText, { color: successColor }]}>
+                    Attendance already marked for today
+                  </ThemedText>
                 </View>
-              </View>
-            </View>
+              )}
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { borderColor }]}
-                onPress={() => setShowTimePicker(false)}
-              >
-                <ThemedText style={[styles.cancelButtonText, { color: textColor }]}>
-                  Cancel
+              {/* In Time Row */}
+              <View style={styles.timeRow}>
+                <View style={styles.timeField}>
+                  <ThemedText style={[styles.label, { color: textColor }]}>In Time</ThemedText>
+                  <View
+                    style={[
+                      styles.timeDisplay,
+                      {
+                        backgroundColor,
+                        borderColor: inTime ? successColor : borderColor,
+                      },
+                    ]}
+                  >
+                    <IconSymbol name="clock.fill" size={18} color={successColor} />
+                    <ThemedText
+                      style={[styles.timeText, { color: inTime ? textColor : mutedColor }]}
+                    >
+                      {inTime || 'Not marked'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.nowButton,
+                    { backgroundColor: canMarkIn ? successColor : mutedColor },
+                  ]}
+                  onPress={markInNow}
+                  disabled={!canMarkIn}
+                >
+                  <ThemedText style={styles.nowButtonText}>In Now</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              {/* Out Time Row */}
+              <View style={styles.timeRow}>
+                <View style={styles.timeField}>
+                  <ThemedText style={[styles.label, { color: textColor }]}>Out Time</ThemedText>
+                  <View
+                    style={[
+                      styles.timeDisplay,
+                      {
+                        backgroundColor,
+                        borderColor: outTime ? errorColor : borderColor,
+                      },
+                    ]}
+                  >
+                    <IconSymbol name="clock.fill" size={18} color={errorColor} />
+                    <ThemedText
+                      style={[styles.timeText, { color: outTime ? textColor : mutedColor }]}
+                    >
+                      {outTime || 'Not marked'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.nowButton,
+                    { backgroundColor: canMarkOut ? errorColor : mutedColor },
+                  ]}
+                  onPress={markOutNow}
+                  disabled={!canMarkOut}
+                >
+                  <ThemedText style={styles.nowButtonText}>Out Now</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              {/* Remarks */}
+              <View style={styles.fieldContainer}>
+                <ThemedText style={[styles.label, { color: textColor }]}>
+                  Remarks (Optional)
                 </ThemedText>
-              </TouchableOpacity>
+                <TextInput
+                  style={[styles.remarksInput, { backgroundColor, borderColor, color: textColor }]}
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder="Enter any remarks..."
+                  placeholderTextColor={mutedColor}
+                  multiline
+                  numberOfLines={3}
+                  editable={canMarkAttendance}
+                />
+              </View>
+
+              {/* Submit Button */}
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton, { backgroundColor: primaryColor }]}
-                onPress={confirmTime}
+                style={[
+                  styles.submitButton,
+                  {
+                    backgroundColor: canMarkAttendance && inTime ? primaryColor : mutedColor,
+                  },
+                  submitting && styles.submitButtonDisabled,
+                ]}
+                onPress={handleSaveAttendance}
+                disabled={submitting || !canMarkAttendance || !inTime}
               >
-                <ThemedText style={styles.confirmButtonText}>Confirm</ThemedText>
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <IconSymbol name="checkmark.circle.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.submitButtonText}>{getSaveButtonText()}</ThemedText>
+                  </>
+                )}
               </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Info Card */}
+          <View style={[styles.infoCard, { backgroundColor: primaryColor + '10' }]}>
+            <IconSymbol name="info.circle.fill" size={20} color={primaryColor} />
+            <View style={styles.infoTextContainer}>
+              <ThemedText style={[styles.infoText, { color: textColor }]}>
+                How to mark attendance:
+              </ThemedText>
+              <ThemedText style={[styles.infoStep, { color: mutedColor }]}>
+                1. When arriving: Press "In Now" then "Save In Time"
+              </ThemedText>
+              <ThemedText style={[styles.infoStep, { color: mutedColor }]}>
+                2. When leaving: Press "Out Now" then "Save Out Time"
+              </ThemedText>
+              <ThemedText style={[styles.infoNote, { color: mutedColor }]}>
+                You must be within {OFFICE_LOCATION.radius}m of campus.
+              </ThemedText>
             </View>
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      )}
     </SafeAreaView>
   )
 }
@@ -557,11 +723,70 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
+  fetchingText: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
+  },
   card: {
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
   },
+  // Location styles
+  locationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  locationInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  locationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  locationStatusText: {
+    fontSize: 14,
+  },
+  locationPanel: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  locationPanelTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  locationLine: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  refreshLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  refreshLocationText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Staff info styles
   staffInfoHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -601,6 +826,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginLeft: 12,
   },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  statusBadgeText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -615,7 +852,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 8,
   },
-  timeInput: {
+  timeDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
@@ -672,94 +909,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 32,
   },
-  infoText: {
+  infoTextContainer: {
     flex: 1,
-    fontSize: 14,
     marginLeft: 12,
-    lineHeight: 20,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '85%',
-    borderRadius: 12,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
+  infoText: {
+    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  pickerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  pickerColumn: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  pickerLabel: {
-    fontSize: 12,
     marginBottom: 8,
   },
-  pickerScroll: {
-    height: 150,
-    width: '100%',
-    borderWidth: 1,
-    borderRadius: 8,
+  infoStep: {
+    fontSize: 13,
+    lineHeight: 20,
   },
-  pickerItem: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  pickerItemText: {
-    fontSize: 16,
-  },
-  pickerItemTextSelected: {
-    fontWeight: '600',
-  },
-  periodPicker: {
-    width: '100%',
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  periodItem: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  periodItemText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    borderWidth: 1,
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  confirmButton: {},
-  confirmButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
+  infoNote: {
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 })

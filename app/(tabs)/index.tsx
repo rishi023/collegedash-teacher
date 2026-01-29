@@ -66,7 +66,7 @@ export default function DashboardScreen() {
     {
       title: 'My Attendance',
       icon: 'checkmark.circle.fill',
-      route: '/staff-attendance',
+      route: '/self-attendance',
       color: successColor,
     },
     { title: 'Attendance', icon: 'calendar', route: '/attendance', color: warningColor },
