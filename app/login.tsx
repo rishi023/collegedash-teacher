@@ -63,7 +63,7 @@ export default function LoginScreen() {
                 {APP_INFO.NAME}
               </ThemedText>
               <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-                Student Portal
+                Teacher Portal
               </ThemedText>
             </View>
 
