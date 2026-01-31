@@ -344,7 +344,7 @@ export const getCurrentInstitution = async (): Promise<Institution | null> => {
   return res?.responseObject ?? null
 }
 
-/** E-content item for dashboard (recent content). */
+/** E-content item for dashboard (recent content). Backend returns full SubjectContent; sectionId needed for deep-link to viewer. */
 export interface SubjectContentSummary {
   id: string
   title?: string
@@ -355,6 +355,10 @@ export interface SubjectContentSummary {
   courseId?: string
   year?: string
   postedDate?: string
+  /** Section id – required to open content in e-content-viewer. */
+  sectionId?: string
+  /** DRAFT | PUBLISHED – for teacher to publish/unpublish from viewer. */
+  status?: string
 }
 
 /** Dashboard summary: recent announcements, news, and e-content in one call (staff app). */
@@ -481,6 +485,132 @@ export const getMyTimetable = async (batchId: string): Promise<TimetableSlotItem
   return (res as ApiResponse<TimetableSlotItem[]> | null)?.responseObject ?? null
 }
 
+// ----- Student comments (teacher adds remarks for students; students see them in their app) -----
+export interface TeacherComment {
+  id: string
+  studentId: string
+  name?: string
+  teacherName?: string
+  remarks: string
+  date: string
+}
+
+/** Get all comments for a student (teacher view). */
+export const getStudentComments = async (
+  studentId: string,
+): Promise<TeacherComment[] | null> => {
+  const res = await api.get<ApiResponse<TeacherComment[]>>('/v1/student/comments', {
+    params: { studentId },
+  })
+  return (res as ApiResponse<TeacherComment[]> | null)?.responseObject ?? null
+}
+
+export interface AddStudentCommentPayload {
+  studentId: string
+  name?: string
+  teacherName?: string
+  remarks: string
+}
+
+/** Add a comment for a student. Returns updated list of comments for that student. */
+export const addStudentComment = async (
+  payload: AddStudentCommentPayload,
+): Promise<TeacherComment[] | null> => {
+  const res = await api.post<ApiResponse<TeacherComment[]>>('/v1/student/comments', payload)
+  return (res as ApiResponse<TeacherComment[]> | null)?.responseObject ?? null
+}
+
+/** Student list item for course/year/section (same shape as attendance list). */
+export interface StudentForComment {
+  studentId: string
+  studentName: string
+  admissionNumber?: string
+  rollNumber?: number
+  fatherName?: string
+  contactNumber?: string
+}
+
+/** Get students for a course/year/section (for comment screen filter). */
+export const getStudentsForSection = async (
+  courseId: string,
+  year: string,
+  section: string,
+  batchId: string,
+): Promise<StudentForComment[] | null> => {
+  const encodedYear = encodeURIComponent(year)
+  const encodedSection = encodeURIComponent(section)
+  const res = await api.get<ApiResponse<StudentForComment[]>>(
+    `/v1/attendance/course/${courseId}/year/${encodedYear}/section/${encodedSection}`,
+    { params: { batchId } },
+  )
+  const data = (res as ApiResponse<StudentForComment[] | unknown> | null)?.responseObject
+  return Array.isArray(data) ? data : null
+}
+
+// ----- Grievances assigned to staff -----
+export type GrievanceCategory =
+  | 'ACADEMIC'
+  | 'EXAMINATION'
+  | 'FEES_FINANCE'
+  | 'INFRASTRUCTURE'
+  | 'HARASSMENT_MISCONDUCT'
+  | 'ADMINISTRATION'
+  | 'OTHER'
+
+export interface GrievanceResponse {
+  id: string
+  grievanceId: string
+  institutionId: string
+  subject: string
+  description: string
+  category: GrievanceCategory
+  status: string
+  priority: string
+  isAnonymous: boolean
+  submittedByName?: string
+  submittedByEmail?: string
+  submittedByPhone?: string
+  submittedByRole?: string
+  assignedToUserId?: string
+  assignedToUserName?: string
+  assignedByUserId?: string
+  assignedByUserName?: string
+  resolutionSummary?: string
+  submittedAt?: string
+  acknowledgedAt?: string
+  assignedAt?: string
+  resolvedAt?: string
+  closedAt?: string
+  lastUpdatedAt?: string
+  attachmentUrls?: string[]
+  internalNotes?: Array< { note: string; addedByUserId: string; addedByUserName: string; addedAt: string }>
+}
+
+interface GrievancePage {
+  content: GrievanceResponse[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+/** List grievances assigned to the logged-in staff. Paginated. */
+export const getMyGrievances = async (
+  page = 0,
+  size = 20,
+): Promise<GrievancePage | null> => {
+  const res = await api.get<ApiResponse<GrievancePage>>('/v1/app/staff/grievances', {
+    params: { page, size },
+  })
+  return (res as ApiResponse<GrievancePage> | null)?.responseObject ?? null
+}
+
+/** Get a single grievance by id. Returns detail only if assigned to current staff. */
+export const getGrievanceDetail = async (id: string): Promise<GrievanceResponse | null> => {
+  const res = await api.get<ApiResponse<GrievanceResponse>>(`/v1/app/staff/grievances/${id}`)
+  return (res as ApiResponse<GrievanceResponse> | null)?.responseObject ?? null
+}
+
 /** My attendance report (current staff only). Optional date range. */
 export const getMyAttendanceReport = async (
   startDate?: string,
@@ -582,11 +712,11 @@ export interface Term {
   holidayCount: number
 }
 
-export const getTerms = async (institutionId: string) => {
-  const res = await api.get<Term[]>('/v1/exams/es/term/all', {
+export const getTerms = async (institutionId: string): Promise<Term[] | null> => {
+  const res = await api.get<ApiResponse<Term[]>>('/v1/exams/es/term/all', {
     params: { institutionId },
   })
-  return res
+  return (res as ApiResponse<Term[]> | null)?.responseObject ?? null
 }
 
 interface SubjectMark {

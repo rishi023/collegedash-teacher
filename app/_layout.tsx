@@ -107,7 +107,10 @@ function LayoutContent() {
   }
 
   return (
-    <NavigationThemeProvider value={colorScheme === 'dark' ? customDarkTheme : customLightTheme}>
+    <NavigationThemeProvider
+      key={`nav-${colorScheme}`}
+      value={colorScheme === 'dark' ? customDarkTheme : customLightTheme}
+    >
       <Stack screenOptions={stackScreenOptions}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -116,7 +119,14 @@ function LayoutContent() {
         <Stack.Screen name="self-attendance" options={screenOptions('Self Attendance')} />
         <Stack.Screen name="staff-attendance" options={screenOptions('Staff Attendance')} />
         <Stack.Screen name="attendance" options={screenOptions('Attendance')} />
+        <Stack.Screen name="student-comments" options={screenOptions('Student Comments')} />
+        <Stack.Screen name="grievances" options={screenOptions('My Grievances')} />
+        <Stack.Screen name="grievance-detail" options={screenOptions('Grievance Details')} />
         <Stack.Screen name="e-content" options={screenOptions('E-Content')} />
+        <Stack.Screen name="e-content-chapters" options={screenOptions('Chapters')} />
+        <Stack.Screen name="e-content-sections" options={screenOptions('Sections')} />
+        <Stack.Screen name="e-content-content" options={screenOptions('Content')} />
+        <Stack.Screen name="e-content-viewer" options={screenOptions('View')} />
         <Stack.Screen name="assignments" options={screenOptions('Assignments')} />
         <Stack.Screen name="homework" options={screenOptions('Homework')} />
         <Stack.Screen name="notifications" options={screenOptions('Notifications')} />

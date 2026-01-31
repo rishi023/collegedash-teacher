@@ -124,6 +124,7 @@ export default function DashboardScreen() {
       color: successColor,
     },
     { title: 'Attendance', icon: 'calendar', route: '/attendance', color: warningColor },
+    { title: 'Timetable', icon: 'clock.fill', route: '/timetable', color: '#06b6d4' },
     { title: 'E-Content', icon: 'book.fill', route: '/e-content', color: errorColor },
     { title: 'Assignments', icon: 'book.fill', route: '/assignments', color: primaryColor },
   ]
@@ -195,36 +196,55 @@ export default function DashboardScreen() {
         </View>
 
         {(isLoading || recentContent.length > 0) && (
-          <View style={styles.announcementsContainer}>
-            <View style={styles.sectionRow}>
-              <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Recent E-Content</ThemedText>
-              <TouchableOpacity onPress={() => router.push('/e-content')} hitSlop={12}>
-                <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.econtentContainer}>
+            <SectionHeader
+              title="Recent E-Content"
+              style={{ paddingHorizontal: 20, marginBottom: 12 }}
+              right={
+                <TouchableOpacity onPress={() => router.push('/e-content')} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                  <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+                </TouchableOpacity>
+              }
+            />
             {isLoading ? (
-              <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+              <View style={[styles.recentContentCard, { backgroundColor: cardBackground }]}>
                 <ActivityIndicator size="small" color={primaryColor} />
                 <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading content…</ThemedText>
               </View>
             ) : (
-              recentContent.slice(0, 3).map(item => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.announcementCard, { backgroundColor: cardBackground }]}
-                  onPress={() => router.push('/e-content')}
-                  activeOpacity={0.8}
-                >
-                  <ThemedText style={[styles.announcementTitle, { color: textColor }]} numberOfLines={1}>
-                    {item.title ?? 'Untitled'}
-                  </ThemedText>
-                  {item.subjectName ? (
-                    <ThemedText style={[styles.announcementMessage, { color: mutedColor }]} numberOfLines={1}>
-                      {item.subjectName}
+              <View style={styles.recentContentList}>
+                {recentContent.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.recentContentCard, { backgroundColor: cardBackground }]}
+                    onPress={() => {
+                      if (item.sectionId) {
+                        router.push({
+                          pathname: '/e-content-viewer',
+                          params: {
+                            sectionId: item.sectionId,
+                            contentId: item.id,
+                            title: item.title ?? 'Content',
+                          },
+                        })
+                      } else {
+                        router.push('/e-content')
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <IconSymbol name="doc.text.fill" size={20} color={primaryColor} />
+                    <ThemedText style={[styles.recentContentTitle, { color: textColor }]} numberOfLines={1}>
+                      {item.title ?? 'Untitled'}
                     </ThemedText>
-                  ) : null}
-                </TouchableOpacity>
-              ))
+                    {item.subjectName ? (
+                      <ThemedText style={[styles.recentContentMeta, { color: mutedColor }]} numberOfLines={1}>
+                        {item.subjectName}
+                      </ThemedText>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
           </View>
         )}
@@ -497,6 +517,36 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  econtentContainer: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    paddingHorizontal: 20,
+  },
+  recentContentList: {
+    gap: 10,
+  },
+  recentContentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  recentContentTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  recentContentMeta: {
+    fontSize: 12,
+    maxWidth: 100,
   },
   announcementsContainer: {
     padding: 20,

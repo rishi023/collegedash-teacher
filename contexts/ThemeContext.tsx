@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useColorScheme as useSystemColorScheme } from 'react-native'
 import { storage } from '@/services/storage'
 
@@ -12,17 +12,35 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
+const VALID_THEMES: Theme[] = ['light', 'dark', 'system']
+
+function normalizeTheme(value: string | null): Theme | null {
+  if (!value || typeof value !== 'string') return null
+  const v = value.trim().toLowerCase()
+  if (VALID_THEMES.includes(v as Theme)) return v as Theme
+  return null
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemColorScheme = useSystemColorScheme()
   const [theme, setThemeState] = useState<Theme>('system')
+  const [hydrated, setHydrated] = useState(false)
+  const userHasSetThemeRef = useRef(false)
 
   useEffect(() => {
     storage.getThemePreference().then(saved => {
-      if (saved) setThemeState(saved)
+      if (userHasSetThemeRef.current) {
+        setHydrated(true)
+        return
+      }
+      const normalized = normalizeTheme(saved)
+      if (normalized) setThemeState(normalized)
+      setHydrated(true)
     })
   }, [])
 
   const setTheme = useCallback((value: Theme) => {
+    userHasSetThemeRef.current = true
     setThemeState(value)
     storage.setThemePreference(value).catch(console.error)
   }, [])

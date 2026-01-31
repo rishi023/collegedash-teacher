@@ -178,12 +178,6 @@ export default function MoreScreen() {
       route: '/self-attendance',
     },
     {
-      title: 'Staff Attendance',
-      icon: 'person.circle.fill',
-      color: '#059669',
-      route: '/staff-attendance',
-    },
-    {
       title: 'Attendance Report',
       icon: 'calendar',
       color: '#f59e0b',
@@ -200,6 +194,12 @@ export default function MoreScreen() {
       icon: 'person.2.fill',
       color: '#8b5cf6',
       route: '/attendance',
+    },
+    {
+      title: 'Student Comments',
+      icon: 'bubble.left.and.bubble.right.fill',
+      color: '#0ea5e9',
+      route: '/student-comments',
     },
     {
       title: 'Assignments',
@@ -236,6 +236,12 @@ export default function MoreScreen() {
       icon: 'clock.fill',
       color: '#06b6d4',
       route: '/timetable',
+    },
+    {
+      title: 'My Grievances',
+      icon: 'exclamationmark.bubble.fill',
+      color: '#f59e0b',
+      route: '/grievances',
     },
   ]
 
