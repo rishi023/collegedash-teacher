@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "collegedash-teacher-app",
+    "name": "GGIMS Teacher App",
     "slug": "collegedash-teacher-app",
     "version": "1.0.0",
     "orientation": "default",
@@ -18,10 +18,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.collegedash.teacher.app",
-      "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
-      ]
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
     "web": {
       "bundler": "metro",

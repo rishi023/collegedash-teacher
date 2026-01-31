@@ -29,7 +29,7 @@ export const setLogoutCallback = (callback: () => void) => {
 
 // axios custom instance
 const api = axios.create({
-  baseURL: process.env.API_BASE ?? 'http://localhost:8000/api',
+  baseURL: process.env.API_BASE ?? 'https://multi-prod-api.studyaid.in/api',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
