@@ -207,8 +207,9 @@ export default function ContentForm({
       // If we have a file to upload
       if (selectedFile) {
         const response = await uploadEContent(selectedFile, {
-          classId: chapter.courseId,
-          className: chapter.courseName,
+          courseId: chapter.courseId,
+          courseName: chapter.courseName,
+          year: chapter.year,
           subjectId: chapter.subjectId,
           subjectName: chapter.subjectName,
           title: title.trim(),

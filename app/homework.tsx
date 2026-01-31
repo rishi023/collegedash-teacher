@@ -2,8 +2,8 @@ import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
-import { getHomeworkByDay } from '@/services/account'
-import React, { useEffect, useState } from 'react'
+import { getHomeworkByDayByCourse, getMySubjects } from '@/services/account'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 interface SubjectHomework {
   subjectName: string
   homework: string
+  attachmentUrls?: string[]
 }
 
 export default function HomeworkScreen() {
@@ -32,32 +33,28 @@ export default function HomeworkScreen() {
   const [homework, setHomework] = useState<SubjectHomework[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
-  useEffect(() => {
-    if (user?.studentDetails) {
-      fetchHomework()
+  const fetchHomework = useCallback(async () => {
+    if (!user?.staffDetails?.institutionId) {
+      setHomework([])
+      return
     }
-  }, [selectedDate, user])
-
-  const fetchHomework = async () => {
-    if (!user?.studentDetails?.classId || !user?.studentDetails?.section) {
-      Alert.alert('Error', 'Student details not available')
+    const subjects = await getMySubjects()
+    const first = subjects?.find(s => s.courseId && s.year)
+    if (!first?.courseId || !first?.year) {
+      setHomework([])
       return
     }
 
     setIsLoading(true)
     try {
       const dateString = formatDateForAPI(selectedDate)
-      const response = await getHomeworkByDay(
-        user.studentDetails.classId,
-        user.studentDetails.section,
+      const data = await getHomeworkByDayByCourse(
+        first.courseId,
+        first.year,
+        first.section,
         dateString,
       )
-
-      if (response?.responseObject) {
-        setHomework(response.responseObject.subjectHomeworkList || [])
-      } else {
-        setHomework([])
-      }
+      setHomework(data?.subjectHomeworkList ?? [])
     } catch (error) {
       console.error('Error fetching homework:', error)
       Alert.alert('Error', 'Failed to fetch homework. Please try again.')
@@ -65,7 +62,11 @@ export default function HomeworkScreen() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [selectedDate, user?.staffDetails?.institutionId])
+
+  useEffect(() => {
+    fetchHomework()
+  }, [fetchHomework])
 
   const formatDateForAPI = (date: Date): string => {
     const year = date.getFullYear()

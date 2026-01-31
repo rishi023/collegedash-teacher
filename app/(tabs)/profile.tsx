@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
+import { useBottomSheet } from '@/contexts/BottomSheetContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
@@ -43,6 +44,7 @@ export default function ProfileScreen() {
   const borderColor = useThemeColor({}, 'border')
   const primaryColor = useThemeColor({}, 'primary')
   const { logout } = useAuth()
+  const { showConfirm, showAlert } = useBottomSheet()
 
   const [imageError, setImageError] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -60,9 +62,9 @@ export default function ProfileScreen() {
   const fetchStaffProfile = async () => {
     try {
       setIsLoadingProfile(true)
-      const response = await getStaffProfile()
-      if (response?.responseObject) {
-        setStaffProfile(response.responseObject)
+      const profile = await getStaffProfile()
+      if (profile) {
+        setStaffProfile(profile)
       }
     } catch (error) {
       console.error('Error fetching staff profile:', error)
@@ -80,22 +82,26 @@ export default function ProfileScreen() {
   // }
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await logout()
-            router.replace('/login')
-          } catch (error) {
-            console.error('Logout error:', error)
-            Alert.alert('Error', 'Failed to logout. Please try again.')
-          }
+    showConfirm({
+      title: 'Logout',
+      message: 'Are you sure you want to logout?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout()
+              router.replace('/login')
+            } catch (error) {
+              console.error('Logout error:', error)
+              showAlert('Error', 'Failed to logout. Please try again.')
+            }
+          },
         },
-      },
-    ])
+      ],
+    })
   }
 
   const handleChangePassword = () => {
@@ -397,7 +403,7 @@ export default function ProfileScreen() {
                 {APP_INFO.NAME} Teacher App v1.0.0
               </ThemedText>
               <ThemedText style={[styles.appInfoSubtext, { color: mutedColor }]}>
-                School Management System
+                College Management System
               </ThemedText>
             </View>
           </>

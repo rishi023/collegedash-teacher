@@ -4,6 +4,7 @@ import { IconSymbol } from '@/components/ui/IconSymbol'
 import { OFFICE_LOCATION } from '@/constants'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import {
+  getCurrentInstitution,
   getStaffAttendanceByDate,
   getStaffProfile,
   markStaffAttendance,
@@ -73,14 +74,24 @@ export default function SelfAttendanceScreen() {
   const [existingAttendanceId, setExistingAttendanceId] = useState<string | null>(null)
   const [fetchingAttendance, setFetchingAttendance] = useState(false)
 
+  // Institution geo (from API when available; else fallback to OFFICE_LOCATION)
+  const [officeLat, setOfficeLat] = useState<number>(OFFICE_LOCATION.latitude)
+  const [officeLng, setOfficeLng] = useState<number>(OFFICE_LOCATION.longitude)
+  const [officeRadius, setOfficeRadius] = useState<number>(OFFICE_LOCATION.radius)
+
   // Location check
-  const isWithinRadius = distance !== null && distance <= OFFICE_LOCATION.radius
+  const isWithinRadius = distance !== null && distance <= officeRadius
   const canMarkAttendance = isWithinRadius && location !== null && !isLoadingLocation
 
   useEffect(() => {
     loadStaffData()
-    getCurrentLocation()
   }, [])
+
+  useEffect(() => {
+    if (!loading) {
+      getCurrentLocation()
+    }
+  }, [loading, officeLat, officeLng])
 
   function formatDate(date: Date): string {
     const year = date.getFullYear()
@@ -122,10 +133,21 @@ export default function SelfAttendanceScreen() {
         setInstitutionId(userData.institutionIds[0])
       }
 
+      // Institution geo for attendance fence (backend uses 200m)
+      try {
+        const institution = await getCurrentInstitution()
+        if (institution?.latitude != null && institution?.longitude != null) {
+          setOfficeLat(institution.latitude)
+          setOfficeLng(institution.longitude)
+          setOfficeRadius(200)
+        }
+      } catch {
+        // keep OFFICE_LOCATION
+      }
+
       // Get staff profile
-      const profileRes = await getStaffProfile()
-      if (profileRes?.responseObject) {
-        const profile = profileRes.responseObject
+      const profile = await getStaffProfile()
+      if (profile) {
         setStaffId(profile.id)
         setStaffName(`${profile.firstName || ''} ${profile.lastNme || ''}`.trim())
         setStaffCode(profile.empCode || '')
@@ -203,10 +225,10 @@ export default function SelfAttendanceScreen() {
       const { latitude, longitude, accuracy } = currentLocation.coords
       setLocation({ latitude, longitude, accuracy })
 
-      // Calculate distance from office
+      // Calculate distance from institution (or fallback office)
       const distanceFromOffice = getDistance(
         { latitude, longitude },
-        { latitude: OFFICE_LOCATION.latitude, longitude: OFFICE_LOCATION.longitude },
+        { latitude: officeLat, longitude: officeLng },
       )
 
       setDistance(distanceFromOffice)
@@ -238,7 +260,7 @@ export default function SelfAttendanceScreen() {
       } else if (!isWithinRadius) {
         Alert.alert(
           'Outside Campus',
-          `You are ${distance?.toFixed(0)}m away. Move within ${OFFICE_LOCATION.radius}m.`,
+          `You are ${distance?.toFixed(0)}m away. Move within ${officeRadius}m of institution.`,
         )
       }
       return
@@ -259,7 +281,7 @@ export default function SelfAttendanceScreen() {
       } else if (!isWithinRadius) {
         Alert.alert(
           'Outside Campus',
-          `You are ${distance?.toFixed(0)}m away. Move within ${OFFICE_LOCATION.radius}m.`,
+          `You are ${distance?.toFixed(0)}m away. Move within ${officeRadius}m of institution.`,
         )
       }
       return
@@ -285,7 +307,7 @@ export default function SelfAttendanceScreen() {
       } else if (!isWithinRadius) {
         Alert.alert(
           'Outside Campus',
-          `You are ${distance?.toFixed(0)}m away from campus. Move within ${OFFICE_LOCATION.radius}m to mark attendance.`,
+          `You are ${distance?.toFixed(0)}m away from institution. Move within ${officeRadius}m to mark attendance.`,
         )
       }
       return

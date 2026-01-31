@@ -1,7 +1,8 @@
 export const APP_INFO = {
   NAME: 'GGIMS',
-  contactEmail: 'support@collegedash.in',
-  contactPhone: '+91-9876543210',
+  // Same as student app for Help & Support
+  contactEmail: 'info@codingage.biz',
+  contactPhone: '+919693243217',
 }
 
 // Office/Institution location for geo-fenced attendance

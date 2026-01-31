@@ -1,34 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { signIn, getStudentProfile } from '@/services/account'
+import { signIn, getStaffProfile, type StaffProfile } from '@/services/account'
 import { storage } from '@/services/storage'
 import { setLogoutCallback } from '@/services/axios'
-
-interface StudentDetails {
-  studentId: string
-  name: string
-  imageUrl: string
-  className: string
-  classId: string
-  section: string
-  rollNo: number
-  batchName: string
-  batchId: string
-  institutionId: string
-  fatherName: string
-  motherName: string | null
-  mobile: string
-  dob: string
-  admissionNo: number
-  admissionDate: string
-  gender: string
-  bloodGroup: string | null
-  address: string | null
-  houseName: string | null
-  state: string | null
-  country: string | null
-  district: string | null
-  pinCode: string | null
-}
 
 interface User {
   id: string
@@ -41,7 +14,7 @@ interface User {
   activated: boolean
   roles: string[]
   permissions: string[]
-  studentDetails?: StudentDetails
+  staffDetails?: StaffProfile
 }
 
 interface AuthContextType {
@@ -61,7 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     checkAuthStatus()
 
-    // Register logout callback for automatic logout on 401 responses
     setLogoutCallback(() => {
       setUser(null)
     })
@@ -73,17 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await storage.getUserData()
 
       if (token && userData) {
-        // Fetch fresh student details on every reload
         try {
-          const studentDetailsResponse = await getStudentProfile(userData.username)
-          if (studentDetailsResponse) {
-            userData.studentDetails = studentDetailsResponse
-            // Update storage with fresh student details
+          const staffProfile = await getStaffProfile()
+          if (staffProfile) {
+            userData.staffDetails = staffProfile
             await storage.setUserData(userData)
           }
-        } catch (studentError) {
-          console.error('Error fetching student details on reload:', studentError)
-          // Continue with cached user data even if student details fetch fails
+        } catch (staffError) {
+          console.error('Error fetching staff profile on reload:', staffError)
         }
 
         setUser(userData)
@@ -106,11 +75,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { token, user: userData } = response.responseObject
 
       await storage.setToken(token)
-
-      checkAuthStatus()
-
       await storage.setUserData(userData)
       setUser(userData)
+
+      try {
+        const staffProfile = await getStaffProfile()
+        if (staffProfile) {
+          userData.staffDetails = staffProfile
+          await storage.setUserData(userData)
+          setUser({ ...userData })
+        }
+      } catch (staffError) {
+        console.error('Error fetching staff profile after login:', staffError)
+      }
     } catch (error) {
       console.error('Login error:', error)
       throw error
@@ -118,12 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    setUser(null)
     try {
       await storage.clearAuthData()
-      setUser(null)
     } catch (error) {
       console.error('Logout error:', error)
-      throw error
     }
   }
 

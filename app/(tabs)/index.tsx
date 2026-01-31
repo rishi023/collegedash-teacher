@@ -1,8 +1,9 @@
+import { SectionHeader } from '@/components/SectionHeader'
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { Href, router } from 'expo-router'
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   Dimensions,
   ScrollView,
@@ -10,10 +11,44 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  RefreshControl,
+  Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '@/contexts/AuthContext'
-import { getAnnouncements, Announcement } from '@/services/account'
+import {
+  getDashboardSummary,
+  type Announcement,
+  type NewsItem,
+  type SubjectContentSummary,
+} from '@/services/account'
+
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
+function getFirstImageUrl(a: Announcement): string | null {
+  const fromImages = a.imageUrls?.[0]
+  if (fromImages) return fromImages
+  const urls = a.contentUrls ?? []
+  for (const url of urls) {
+    const path = (url.split('?')[0] ?? '').toLowerCase()
+    if (IMAGE_EXTENSIONS.some((ext) => path.endsWith(ext))) return url
+  }
+  return null
+}
+
+function getFirstNewsImageUrl(item: NewsItem): string | null {
+  if (item.imageUrl) return item.imageUrl
+  return item.imageUrls?.length ? item.imageUrls[0] : null
+}
+
+function stripNewsHtml(html: string | undefined, maxLength = 80): string {
+  if (!html || typeof html !== 'string') return ''
+  const text = html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+  return text.length > maxLength ? text.slice(0, maxLength) + '…' : text
+}
 
 interface Action {
   title: string
@@ -24,13 +59,20 @@ interface Action {
 
 const { width } = Dimensions.get('window')
 
+function staffDisplayName(staff: { firstName?: string; lastNme?: string } | null): string {
+  if (!staff) return 'Staff'
+  const first = staff.firstName ?? ''
+  const last = staff.lastNme ?? ''
+  return [first, last].filter(Boolean).join(' ') || 'Staff'
+}
+
 export default function DashboardScreen() {
   const { user } = useAuth()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
-  const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(true)
-
-  // const attendancePercentage = getAttendancePercentage()
-  // const averageGrade = getAverageGrade()
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([])
+  const [recentContent, setRecentContent] = useState<SubjectContentSummary[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -41,26 +83,38 @@ export default function DashboardScreen() {
   const warningColor = useThemeColor({}, 'warning')
   const errorColor = useThemeColor({}, 'error')
 
-  useEffect(() => {
-    const fetchAnnouncements = async () => {
-      try {
-        const institutionId = user?.studentDetails?.institutionId
-        if (institutionId) {
-          setIsLoadingAnnouncements(true)
-          const response = await getAnnouncements(institutionId)
-          if (response?.responseObject?.content) {
-            setAnnouncements(response.responseObject.content)
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching announcements:', error)
-      } finally {
-        setIsLoadingAnnouncements(false)
-      }
+  const fetchDashboard = useCallback(async () => {
+    if (!user?.staffDetails?.institutionId) {
+      setIsLoading(false)
+      setRefreshing(false)
+      return
     }
+    try {
+      setIsLoading(true)
+      const summary = await getDashboardSummary()
+      if (summary) {
+        setAnnouncements(summary.recentAnnouncements ?? [])
+        setNewsItems(summary.recentNews ?? [])
+        setRecentContent(summary.recentContent ?? [])
+      } else {
+        setAnnouncements([])
+        setNewsItems([])
+        setRecentContent([])
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard:', error)
+      setAnnouncements([])
+      setNewsItems([])
+      setRecentContent([])
+    } finally {
+      setIsLoading(false)
+      setRefreshing(false)
+    }
+  }, [user?.staffDetails?.institutionId])
 
-    fetchAnnouncements()
-  }, [user?.studentDetails?.institutionId])
+  useEffect(() => {
+    fetchDashboard()
+  }, [fetchDashboard])
 
   const quickActions: Action[] = [
     {
@@ -79,18 +133,22 @@ export default function DashboardScreen() {
       edges={{ top: 'additive', bottom: 'off' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={fetchDashboard} colors={[primaryColor]} />
+        }
+      >
         <View style={[styles.header, { backgroundColor: cardBackground }]}>
           <View style={styles.welcomeSection}>
             <ThemedText style={[styles.welcomeText, { color: mutedColor }]}>
               Welcome back,
             </ThemedText>
-            <ThemedText style={[styles.studentName, { color: textColor }]}>
-              {user?.studentDetails?.name || user?.firstName || 'Student'}
+            <ThemedText style={[styles.staffName, { color: textColor }]}>
+              {staffDisplayName(user?.staffDetails) || user?.firstName || 'Staff'}
             </ThemedText>
-            <ThemedText style={[styles.classInfo, { color: mutedColor }]}>
-              {user?.studentDetails?.className || 'N/A'} - Section{' '}
-              {user?.studentDetails?.section || 'N/A'}
+            <ThemedText style={[styles.roleInfo, { color: mutedColor }]}>
+              {user?.staffDetails?.role || 'Staff'} {user?.staffDetails?.empCode ? `• ${user.staffDetails.empCode}` : ''}
             </ThemedText>
           </View>
         </View>
@@ -136,58 +194,208 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {(isLoading || recentContent.length > 0) && (
+          <View style={styles.announcementsContainer}>
+            <View style={styles.sectionRow}>
+              <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Recent E-Content</ThemedText>
+              <TouchableOpacity onPress={() => router.push('/e-content')} hitSlop={12}>
+                <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+              </TouchableOpacity>
+            </View>
+            {isLoading ? (
+              <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+                <ActivityIndicator size="small" color={primaryColor} />
+                <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading content…</ThemedText>
+              </View>
+            ) : (
+              recentContent.slice(0, 3).map(item => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.announcementCard, { backgroundColor: cardBackground }]}
+                  onPress={() => router.push('/e-content')}
+                  activeOpacity={0.8}
+                >
+                  <ThemedText style={[styles.announcementTitle, { color: textColor }]} numberOfLines={1}>
+                    {item.title ?? 'Untitled'}
+                  </ThemedText>
+                  {item.subjectName ? (
+                    <ThemedText style={[styles.announcementMessage, { color: mutedColor }]} numberOfLines={1}>
+                      {item.subjectName}
+                    </ThemedText>
+                  ) : null}
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+
         <View style={styles.announcementsContainer}>
-          <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-            Recent Announcements
-          </ThemedText>
-          {isLoadingAnnouncements ? (
+          <SectionHeader
+            title="News"
+            right={
+              newsItems.length > 0 ? (
+                <TouchableOpacity onPress={() => router.push('/news')} hitSlop={12}>
+                  <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+                </TouchableOpacity>
+              ) : undefined
+            }
+          />
+          {isLoading ? (
+            <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+              <ActivityIndicator size="small" color={primaryColor} />
+              <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading news…</ThemedText>
+            </View>
+          ) : newsItems.length > 0 ? (
+            <View style={styles.announcementList}>
+              {newsItems.slice(0, 3).map(item => {
+                const newsImageUrl = getFirstNewsImageUrl(item)
+                const snippet = stripNewsHtml(item.content, 80)
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.announcementCard, { backgroundColor: cardBackground }]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/news-detail',
+                        params: {
+                          id: item.id,
+                          title: item.title ?? '',
+                          content: item.content ?? '',
+                          postedOn: item.postedOn ?? '',
+                          author: item.author ?? '',
+                          imageUrl: newsImageUrl ?? '',
+                        },
+                      })
+                    }
+                    activeOpacity={0.8}
+                  >
+                    {newsImageUrl ? (
+                      <Image
+                        source={{ uri: newsImageUrl }}
+                        style={styles.announcementCardImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.announcementCardImagePlaceholder, { backgroundColor: `${mutedColor}18` }]}>
+                        <IconSymbol name="doc.text.fill" size={28} color={mutedColor} />
+                      </View>
+                    )}
+                    <View style={styles.announcementCardContent}>
+                      <ThemedText style={[styles.announcementTitle, { color: textColor }]} numberOfLines={2}>
+                        {item.title ?? 'Untitled'}
+                      </ThemedText>
+                      {snippet ? (
+                        <ThemedText style={[styles.announcementMessage, { color: mutedColor }]} numberOfLines={1}>
+                          {snippet}
+                        </ThemedText>
+                      ) : null}
+                      <ThemedText style={[styles.announcementDate, { color: mutedColor }]}>
+                        {item.postedOn ? new Date(item.postedOn).toLocaleDateString() : ''}
+                      </ThemedText>
+                    </View>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
+          ) : (
+            <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+              <ThemedText style={[styles.noDataText, { color: mutedColor }]}>No news available</ThemedText>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.announcementsContainer}>
+          <SectionHeader
+            title="Notices & Announcements"
+            right={
+              announcements.length > 0 ? (
+                <TouchableOpacity onPress={() => router.push('/announcements')} hitSlop={12}>
+                  <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+                </TouchableOpacity>
+              ) : undefined
+            }
+          />
+          {isLoading ? (
             <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
               <ActivityIndicator size="small" color={primaryColor} />
               <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
-                Loading announcements...
+                Loading…
               </ThemedText>
             </View>
           ) : announcements.length > 0 ? (
-            announcements.slice(0, 3).map(announcement => (
-              <View
-                key={announcement.id}
-                style={[styles.announcementCard, { backgroundColor: cardBackground }]}
-              >
-                <View style={styles.announcementHeader}>
-                  <ThemedText style={[styles.announcementTitle, { color: textColor }]}>
-                    {announcement.title}
-                  </ThemedText>
-                  <View
-                    style={[
-                      styles.typeBadge,
-                      {
-                        backgroundColor:
-                          announcement.type === 'ALERT'
-                            ? errorColor
-                            : announcement.type === 'EVENT'
-                              ? warningColor
-                              : successColor,
-                      },
-                    ]}
+            <View style={styles.announcementList}>
+              {announcements.slice(0, 3).map(announcement => {
+                const imageUrl = getFirstImageUrl(announcement)
+                return (
+                  <TouchableOpacity
+                    key={announcement.id}
+                    style={[styles.announcementCard, { backgroundColor: cardBackground }]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/announcement-detail',
+                        params: {
+                          id: announcement.id,
+                          title: announcement.title ?? '',
+                          description: announcement.description ?? '',
+                          postedOn: announcement.postedOn ?? '',
+                          type: announcement.type ?? 'NOTICE',
+                          contentUrls: JSON.stringify(announcement.contentUrls ?? []),
+                          imageUrls: JSON.stringify(announcement.imageUrls ?? []),
+                        },
+                      })
+                    }
+                    activeOpacity={0.8}
                   >
-                    <ThemedText style={styles.typeText}>{announcement.type}</ThemedText>
-                  </View>
-                </View>
-                <ThemedText
-                  style={[styles.announcementMessage, { color: mutedColor }]}
-                  numberOfLines={2}
-                >
-                  {announcement.description}
-                </ThemedText>
-                <ThemedText style={[styles.announcementDate, { color: mutedColor }]}>
-                  {new Date(announcement.postedOn).toLocaleDateString()}
-                </ThemedText>
-              </View>
-            ))
+                    {imageUrl ? (
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.announcementCardImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.announcementCardImagePlaceholder, { backgroundColor: `${mutedColor}18` }]}>
+                        <IconSymbol name="bell.fill" size={28} color={mutedColor} />
+                      </View>
+                    )}
+                    <View style={styles.announcementCardContent}>
+                      <View style={styles.announcementHeader}>
+                        <ThemedText style={[styles.announcementTitle, { color: textColor }]} numberOfLines={2}>
+                          {announcement.title}
+                        </ThemedText>
+                        <View
+                          style={[
+                            styles.typeBadge,
+                            {
+                              backgroundColor:
+                                announcement.type === 'ALERT'
+                                  ? errorColor
+                                  : announcement.type === 'EVENT'
+                                    ? warningColor
+                                    : successColor,
+                            },
+                          ]}
+                        >
+                          <ThemedText style={styles.typeText}>{announcement.type}</ThemedText>
+                        </View>
+                      </View>
+                      <ThemedText
+                        style={[styles.announcementMessage, { color: mutedColor }]}
+                        numberOfLines={2}
+                      >
+                        {announcement.description}
+                      </ThemedText>
+                      <ThemedText style={[styles.announcementDate, { color: mutedColor }]}>
+                        {new Date(announcement.postedOn).toLocaleDateString()}
+                      </ThemedText>
+                    </View>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
           ) : (
             <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
               <ThemedText style={[styles.noDataText, { color: mutedColor }]}>
-                No announcements available
+                No notices or announcements available
               </ThemedText>
             </View>
           )}
@@ -212,12 +420,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 4,
   },
-  studentName: {
+  staffName: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  classInfo: {
+  roleInfo: {
     fontSize: 14,
   },
   // statsContainer: {
@@ -257,6 +465,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 16,
   },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  viewAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -283,15 +501,40 @@ const styles = StyleSheet.create({
   announcementsContainer: {
     padding: 20,
   },
+  announcementList: {
+    gap: 12,
+  },
   announcementCard: {
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    padding: 0,
     borderRadius: 12,
     marginBottom: 12,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  announcementCardImage: {
+    width: 88,
+    height: 88,
+    minWidth: 88,
+    backgroundColor: '#eee',
+  },
+  announcementCardImagePlaceholder: {
+    width: 88,
+    height: 88,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  announcementCardContent: {
+    flex: 1,
+    minWidth: 0,
+    padding: 14,
+    justifyContent: 'center',
   },
   announcementHeader: {
     flexDirection: 'row',

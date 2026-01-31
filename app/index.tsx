@@ -1,7 +1,10 @@
-import { Redirect } from 'expo-router';
+import { View } from 'react-native'
 
+/**
+ * Root index is a gate: LayoutContent in _layout handles initial routing
+ * (onboarding first-time, then login or tabs). No redirect here to avoid
+ * flashing login before onboarding.
+ */
 export default function Index() {
-  // Use Expo Router's Redirect component instead of useEffect + router.replace
-  // This ensures the navigation happens at the right time in the component lifecycle
-  return <Redirect href="/login" />;
+  return <View style={{ flex: 1 }} />
 }

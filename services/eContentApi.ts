@@ -157,8 +157,12 @@ export interface SubjectByCourseOption {
 }
 
 export interface EContentUploadMetadata {
-  classId: string
-  className: string
+  /** Prefer course/year; classId kept for legacy backend compatibility. */
+  classId?: string
+  className?: string
+  courseId: string
+  courseName: string
+  year: string
   subjectId: string
   subjectName: string
   title: string
@@ -230,6 +234,7 @@ export interface SectionWithContent extends ContentSection {
 }
 
 const ENDPOINT = '/v1/teacher/e-content'
+const TEACHER_CONTENT_BASE = '/v1/teacher/content'
 const CHAPTER_ENDPOINT = '/v1/teacher/chapters'
 const SECTION_ENDPOINT = '/v1/teacher/sections'
 
@@ -256,19 +261,20 @@ type SubjectsResponse = ApiResponse<SubjectByCourseOption[]>
 
 // ==================== CHAPTER APIS ====================
 
-// Get all chapters for a subject
-export const getChapters = async (subjectId: string, status?: ContentStatus) => {
-  const institutionId = await getInstitutionId()
-  const batchId = await getBatchId()
-  if (!institutionId || !batchId) return null
+/** Params for getChapters (must match backend ChapterController: courseId, year, subjectId; section optional). */
+export interface GetChaptersParams {
+  courseId: string
+  year: string
+  subjectId: string
+  section?: string
+}
 
+/** Get all chapters for a subject (course/year/section). Matches admin portal and backend ChapterController. */
+export const getChapters = async (params: GetChaptersParams): Promise<ChaptersResponse | null> => {
+  const { courseId, year, subjectId, section } = params
+  if (!courseId?.trim() || !year?.trim() || !subjectId?.trim()) return null
   const res: ChaptersResponse | null = await api.get(CHAPTER_ENDPOINT, {
-    params: {
-      institutionId,
-      batchId,
-      subjectId,
-      ...(status && { status }),
-    },
+    params: { courseId, year, subjectId, ...(section?.trim() && { section: section.trim() }) },
   })
   return res
 }
@@ -457,8 +463,10 @@ export const getContentByChapter = async (chapterId: string) => {
 }
 
 // Get content by section
-export const getContentBySection = async (sectionId: string) => {
-  const res: ContentsResponse | null = await api.get(`${ENDPOINT}/by-section/${sectionId}`)
+/** Get content items for a section. Uses TeacherController path /v1/teacher/content/by-section/{sectionId}. */
+export const getContentBySection = async (sectionId: string): Promise<ContentsResponse | null> => {
+  if (!sectionId?.trim()) return null
+  const res: ContentsResponse | null = await api.get(`${TEACHER_CONTENT_BASE}/by-section/${sectionId}`)
   return res
 }
 
@@ -497,12 +505,15 @@ export const uploadEContent = async (
     type: file.type,
   } as any)
 
-  // Append metadata fields
+  // Append metadata fields (course/year preferred)
   formData.append('title', metadata.title)
-  formData.append('classId', metadata.classId)
-  formData.append('className', metadata.className)
+  formData.append('courseId', metadata.courseId)
+  formData.append('courseName', metadata.courseName)
+  formData.append('year', metadata.year)
   formData.append('subjectId', metadata.subjectId)
   formData.append('subjectName', metadata.subjectName)
+  if (metadata.classId) formData.append('classId', metadata.classId)
+  if (metadata.className) formData.append('className', metadata.className)
 
   if (metadata.description) formData.append('description', metadata.description)
   if (metadata.chapter) formData.append('chapter', metadata.chapter)

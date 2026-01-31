@@ -1,14 +1,26 @@
 import { ThemedText } from '@/components/ThemedText';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { dummyTimetable, TimeSlot } from '@/services/dummyData';
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { getMyTimetable, type TimetableSlotItem } from '@/services/account';
+import { storage } from '@/services/storage';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAY_LABELS: Record<string, string> = {
+  MONDAY: 'Monday',
+  TUESDAY: 'Tuesday',
+  WEDNESDAY: 'Wednesday',
+  THURSDAY: 'Thursday',
+  FRIDAY: 'Friday',
+  SATURDAY: 'Saturday',
+};
+
+const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
 export default function TimetableScreen() {
+  const { user } = useAuth();
   const backgroundColor = useThemeColor({}, 'secondary');
   const cardBackground = useThemeColor({}, 'card');
   const textColor = useThemeColor({}, 'text');
@@ -16,26 +28,74 @@ export default function TimetableScreen() {
   const borderColor = useThemeColor({}, 'border');
   const primaryColor = useThemeColor({}, 'primary');
 
+  const [slots, setSlots] = useState<TimetableSlotItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedDay, setSelectedDay] = useState('Monday');
 
-  // Group timetable by day
-  const timetableByDay = dummyTimetable.reduce((acc, slot) => {
-    if (!acc[slot.day]) {
-      acc[slot.day] = [];
+  const batchId = user?.runningBatchId ?? '';
+
+  const fetchTimetable = useCallback(async () => {
+    if (!batchId) {
+      const userData = await storage.getUserData();
+      const bid = userData?.runningBatchId;
+      if (!bid) {
+        setSlots([]);
+        setLoading(false);
+        return;
+      }
+      const list = await getMyTimetable(bid);
+      setSlots(list ?? []);
+    } else {
+      const list = await getMyTimetable(batchId);
+      setSlots(list ?? []);
     }
-    acc[slot.day].push(slot);
+  }, [batchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await fetchTimetable();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [fetchTimetable]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const userData = await storage.getUserData();
+    const bid = userData?.runningBatchId ?? batchId;
+    if (bid) {
+      const list = await getMyTimetable(bid);
+      setSlots(list ?? []);
+    }
+    setRefreshing(false);
+  };
+
+  // Group timetable by day (display label)
+  const timetableByDay = React.useMemo(() => {
+    const acc: Record<string, TimetableSlotItem[]> = {};
+    for (const day of DAY_ORDER) {
+      acc[DAY_LABELS[day] ?? day] = [];
+    }
+    for (const slot of slots) {
+      const dayLabel = DAY_LABELS[slot.dayOfWeek] ?? slot.dayOfWeek;
+      if (!acc[dayLabel]) acc[dayLabel] = [];
+      acc[dayLabel].push(slot);
+    }
+    for (const day of Object.keys(acc)) {
+      acc[day].sort((a, b) => a.period - b.period);
+    }
     return acc;
-  }, {} as Record<string, TimeSlot[]>);
+  }, [slots]);
 
-  // Sort slots by period
-  Object.keys(timetableByDay).forEach((day) => {
-    timetableByDay[day].sort((a, b) => a.period - b.period);
-  });
-
+  const daysWithSlots = DAY_ORDER.map(d => DAY_LABELS[d]).filter(d => (timetableByDay[d]?.length ?? 0) > 0);
+  const displayDays = daysWithSlots.length > 0 ? daysWithSlots : Object.keys(DAY_LABELS).map(k => DAY_LABELS[k]);
   const selectedDaySlots = timetableByDay[selectedDay] || [];
 
   const getSubjectColor = (subject: string) => {
-    const colors = {
+    const colors: Record<string, string> = {
       Mathematics: '#3b82f6',
       English: '#10b981',
       Science: '#f59e0b',
@@ -48,15 +108,24 @@ export default function TimetableScreen() {
       Library: '#6b7280',
       Assembly: '#14b8a6',
     };
-    return colors[subject as keyof typeof colors] || '#6b7280';
+    return colors[subject] || '#6b7280';
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView edges={{ top: 'off', bottom: 'additive' }} style={[styles.container, styles.center, { backgroundColor }]}>
+        <ActivityIndicator size="large" color={primaryColor} />
+        <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading timetable...</ThemedText>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={{ top: 'off', bottom: 'additive' }} style={[styles.container, { backgroundColor }]}>
       {/* Day Selector */}
       <View style={[styles.daySelector, { backgroundColor: cardBackground }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScrollContent}>
-          {DAYS.map((day) => (
+          {displayDays.map((day) => (
             <TouchableOpacity
               key={day}
               style={[
@@ -73,7 +142,11 @@ export default function TimetableScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryColor]} />}
+      >
         {/* Selected Day Title */}
         <View style={styles.selectedDayHeader}>
           <ThemedText style={[styles.selectedDayTitle, { color: textColor }]}>{selectedDay}</ThemedText>
@@ -84,28 +157,28 @@ export default function TimetableScreen() {
 
         {/* Time Slots */}
         <View style={styles.slotsContainer}>
-          {selectedDaySlots.map((slot, index) => (
+          {selectedDaySlots.map((slot) => (
             <View key={slot.id} style={[styles.slotCard, { backgroundColor: cardBackground, borderColor }]}>
-              <View style={[styles.periodIndicator, { backgroundColor: getSubjectColor(slot.subject) }]}>
+              <View style={[styles.periodIndicator, { backgroundColor: getSubjectColor(slot.subjectName ?? '') }]}>
                 <ThemedText style={styles.periodText}>{slot.period}</ThemedText>
               </View>
 
               <View style={styles.slotContent}>
                 <View style={styles.slotHeader}>
-                  <ThemedText style={[styles.subjectText, { color: textColor }]}>{slot.subject}</ThemedText>
+                  <ThemedText style={[styles.subjectText, { color: textColor }]}>{slot.subjectName ?? '–'}</ThemedText>
                   <ThemedText style={[styles.timeText, { color: mutedColor }]}>
-                    {slot.startTime} - {slot.endTime}
+                    {slot.startTime} – {slot.endTime}
                   </ThemedText>
                 </View>
 
                 <View style={styles.slotDetails}>
                   <View style={styles.detailRow}>
                     <IconSymbol name="person" size={14} color={mutedColor} />
-                    <ThemedText style={[styles.detailText, { color: mutedColor }]}>{slot.teacher}</ThemedText>
+                    <ThemedText style={[styles.detailText, { color: mutedColor }]}>{slot.staffName ?? '–'}</ThemedText>
                   </View>
                   <View style={styles.detailRow}>
                     <IconSymbol name="location" size={14} color={mutedColor} />
-                    <ThemedText style={[styles.detailText, { color: mutedColor }]}>{slot.room}</ThemedText>
+                    <ThemedText style={[styles.detailText, { color: mutedColor }]}>{slot.room ?? '–'}</ThemedText>
                   </View>
                 </View>
               </View>
@@ -131,6 +204,14 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 10,
     flex: 1,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
   },
   header: {
     flexDirection: 'row',

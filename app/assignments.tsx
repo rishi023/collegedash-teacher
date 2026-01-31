@@ -2,7 +2,9 @@ import { ThemedText } from '@/components/ThemedText'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { api } from '@/services/axios'
 import { storage } from '@/services/storage'
+import { uploadAssignmentAttachment } from '@/services/account'
 import { Course, HomeworkItem, HomeworkPayload, Section, Year } from '@/types/assignment'
+import * as DocumentPicker from 'expo-document-picker'
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
@@ -150,6 +152,7 @@ export default function AssignmentsScreen() {
     const list: HomeworkItem[] = subjects.map(sub => ({
       subjectName: sub.name,
       homework: '',
+      attachmentUrls: [],
     }))
     setHomeworkList(list)
   }
@@ -157,6 +160,46 @@ export default function AssignmentsScreen() {
   const updateHomework = (index: number, text: string) => {
     const updated = [...homeworkList]
     updated[index].homework = text
+    setHomeworkList(updated)
+  }
+
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
+
+  const addAttachment = async (index: number) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*', 'application/pdf'],
+        copyToCacheDirectory: true,
+      })
+      if (result.canceled) return
+      const file = result.assets[0]
+      setUploadingIndex(index)
+      const url = await uploadAssignmentAttachment({
+        uri: file.uri,
+        name: file.name || 'attachment',
+        type: file.mimeType || 'application/octet-stream',
+      })
+      setUploadingIndex(null)
+      if (url) {
+        const updated = [...homeworkList]
+        const urls = updated[index].attachmentUrls ?? []
+        updated[index] = { ...updated[index], attachmentUrls: [...urls, url] }
+        setHomeworkList(updated)
+      } else {
+        Alert.alert('Error', 'Failed to upload file')
+      }
+    } catch (e) {
+      setUploadingIndex(null)
+      console.error(e)
+      Alert.alert('Error', 'Failed to upload file')
+    }
+  }
+
+  const removeAttachment = (index: number, urlIndex: number) => {
+    const updated = [...homeworkList]
+    const urls = [...(updated[index].attachmentUrls ?? [])]
+    urls.splice(urlIndex, 1)
+    updated[index] = { ...updated[index], attachmentUrls: urls }
     setHomeworkList(updated)
   }
 
@@ -199,7 +242,11 @@ export default function AssignmentsScreen() {
       grade: course.name,
       id: null,
       published: false,
-      subjectHomeworkList: filledList,
+      subjectHomeworkList: filledList.map(h => ({
+        subjectName: h.subjectName,
+        homework: h.homework,
+        attachmentUrls: h.attachmentUrls?.length ? h.attachmentUrls : undefined,
+      })),
     }
 
     const res = await api.post('/v1/homework', payload)
@@ -452,6 +499,42 @@ export default function AssignmentsScreen() {
                     placeholderTextColor={mutedColor}
                     multiline
                   />
+                  <View style={styles.attachmentRow}>
+                    <TouchableOpacity
+                      style={[styles.attachButton, { backgroundColor: primaryColor + '20', borderColor: primaryColor }]}
+                      onPress={() => addAttachment(index)}
+                      disabled={uploadingIndex !== null}
+                    >
+                      {uploadingIndex === index ? (
+                        <ActivityIndicator size="small" color={primaryColor} />
+                      ) : (
+                        <ThemedText style={[styles.attachButtonText, { color: primaryColor }]}>
+                          + Add image or PDF
+                        </ThemedText>
+                      )}
+                    </TouchableOpacity>
+                    {(item.attachmentUrls?.length ?? 0) > 0 && (
+                      <View style={styles.attachmentChips}>
+                        {(item.attachmentUrls ?? []).map((url, urlIndex) => {
+                          const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i.test(url) || url.includes('image')
+                          const label = isImage ? 'Image' : 'PDF'
+                          return (
+                            <View key={urlIndex} style={[styles.attachmentChip, { backgroundColor: cardBackground, borderColor }]}>
+                              <ThemedText style={[styles.attachmentChipText, { color: textColor }]} numberOfLines={1}>
+                                {label} {urlIndex + 1}
+                              </ThemedText>
+                              <TouchableOpacity
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                onPress={() => removeAttachment(index, urlIndex)}
+                              >
+                                <ThemedText style={{ color: mutedColor, fontSize: 14 }}>✕</ThemedText>
+                              </TouchableOpacity>
+                            </View>
+                          )
+                        })}
+                      </View>
+                    )}
+                  </View>
                 </View>
               ))}
 
@@ -828,6 +911,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  attachmentRow: {
+    marginTop: 8,
+  },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  attachButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  attachmentChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  attachmentChipText: {
+    fontSize: 12,
+    maxWidth: 120,
   },
   tableHeader: {
     flexDirection: 'row',

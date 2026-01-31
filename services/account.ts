@@ -89,6 +89,7 @@ export const getStudentProfile = async (userId: string): Promise<StudentProfile 
 interface SubjectHomework {
   subjectName: string
   homework: string
+  attachmentUrls?: string[]
 }
 
 interface HomeworkData {
@@ -110,6 +111,36 @@ export const getHomeworkByDay = async (classId: string, section: string, date: s
   return res
 }
 
+/** Fetch homework for a day by course/year/section (for staff app). */
+export const getHomeworkByDayByCourse = async (
+  courseId: string,
+  year: string,
+  section: string | undefined,
+  date: string
+) => {
+  const res = await api.get<ApiResponse<HomeworkData>>(
+    `/v1/homework/course/${courseId}/year/${encodeURIComponent(year)}/day`,
+    { params: { section: section ?? '', date } }
+  )
+  return (res?.data as ApiResponse<HomeworkData> | undefined)?.responseObject ?? null
+}
+
+/** Upload an image or PDF for assignment attachment. Returns the file URL on success. */
+export const uploadAssignmentAttachment = async (
+  file: { uri: string; name: string; type: string },
+): Promise<string | null> => {
+  const formData = new FormData()
+  formData.append('file', {
+    uri: file.uri,
+    name: file.name || 'attachment',
+    type: file.type || 'application/octet-stream',
+  } as any)
+  const res: ApiResponse<string> | null = await api.post('/v1/image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res?.responseObject ?? null
+}
+
 export interface AttendanceRecord {
   studentId: string
   admissionNumber: number
@@ -124,6 +155,7 @@ export interface AttendanceRecord {
 
 type AttendanceResponse = ApiResponse<AttendanceRecord[]>
 
+/** Legacy: by classId/section. For course/year use attendance/course/{courseId}/year/{year} endpoints. */
 export const getStudentAttendance = async (
   classId: string,
   section: string,
@@ -160,6 +192,7 @@ export interface Announcement {
   type: 'NOTICE' | 'EVENT' | 'ALERT'
   title: string
   description: string
+  imageUrls?: string[]
   contentUrls: string[]
   postedOn: string
   createdAt: string
@@ -182,9 +215,16 @@ interface PagedResponse<T> {
 
 type AnnouncementResponse = ApiResponse<PagedResponse<Announcement>>
 
-export const getAnnouncements = async (institutionId: string) => {
+/** Fetch announcements with pagination. Latest first (postedOn,desc). type filters by NOTICE, TENDER, etc.; omit for all. */
+export const getAnnouncements = async (
+  institutionId: string,
+  page = 0,
+  size = 30,
+  sort = 'postedOn,desc',
+  type?: string
+) => {
   const res: AnnouncementResponse | null = await api.get('/v1/app/student/public/announcement', {
-    params: { institutionId },
+    params: { institutionId, page, size, sort, ...(type ? { type } : {}) },
   })
   return res
 }
@@ -280,9 +320,176 @@ export interface StaffProfile {
   paddress: StaffAddress
 }
 
-export const getStaffProfile = async () => {
-  const res = await api.get<StaffProfile>('/v1/staff/profile')
+export const getStaffProfile = async (): Promise<StaffProfile | null> => {
+  const res = (await api.get('/v1/staff/profile')) as ApiResponse<StaffProfile> | null
+  return res?.responseObject ?? null
+}
+
+/** Current user's institution (logo, address, lat/long for geo-check, etc.). Requires auth. */
+export interface Institution {
+  id: string
+  name: string
+  address?: { line1?: string; city?: string; state?: string; country?: string; pinCode?: string }
+  logoUrl?: string
+  principalSignatureUrl?: string
+  website?: string
+  contacts?: string[]
+  emailIds?: string[]
+  latitude?: number
+  longitude?: number
+}
+
+export const getCurrentInstitution = async (): Promise<Institution | null> => {
+  const res = (await api.get('/v1/institution/me')) as ApiResponse<Institution> | null
+  return res?.responseObject ?? null
+}
+
+/** E-content item for dashboard (recent content). */
+export interface SubjectContentSummary {
+  id: string
+  title?: string
+  description?: string
+  contentType?: string
+  contentUrl?: string
+  subjectName?: string
+  courseId?: string
+  year?: string
+  postedDate?: string
+}
+
+/** Dashboard summary: recent announcements, news, and e-content in one call (staff app). */
+export interface DashboardSummary {
+  recentAnnouncements: Announcement[]
+  recentNews: NewsItem[]
+  recentContent: SubjectContentSummary[]
+}
+
+export interface NewsItem {
+  id: string
+  institutionId: string
+  title?: string
+  content?: string
+  imageUrl?: string
+  imageUrls?: string[]
+  postedOn?: string
+  author?: string
+}
+
+interface NewsPage {
+  content: NewsItem[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+type NewsResponse = ApiResponse<NewsPage>
+
+/** Fetch news with pagination. Latest first. */
+export const getNews = async (institutionId: string, page = 0, size = 20) => {
+  const res: NewsResponse | null = await api.get('/v1/app/student/news', {
+    params: { institutionId, page, size, sort: 'postedOn,desc' },
+  })
   return res
+}
+
+export const getDashboardSummary = async (): Promise<DashboardSummary | null> => {
+  const res = (await api.get('/v1/app/staff/dashboard')) as ApiResponse<DashboardSummary> | null
+  return res?.responseObject ?? null
+}
+
+/** Assigned subject for staff app (course/year/section). */
+export interface StaffSubjectItem {
+  courseId?: string
+  courseName?: string
+  year?: string
+  section?: string
+  subjectId?: string
+  subjectName?: string
+  className?: string
+  classId?: string
+  skillName?: string
+  subSkillName?: string
+}
+
+export const getMySubjects = async (): Promise<StaffSubjectItem[] | null> => {
+  const res = (await api.get('/v1/app/staff/subjects')) as ApiResponse<StaffSubjectItem[]> | null
+  return res?.responseObject ?? null
+}
+
+/** Staff payroll summary for payslips list. */
+export interface StaffPayrollSummary {
+  id: string
+  staffId?: string
+  periodId?: string
+  status?: string
+  grossEarnings?: number
+  grossDeductions?: number
+  netPayable?: number
+  payrollDate?: string
+  staffSnapshot?: { name?: string; empCode?: string }
+  attendanceSnapshot?: { year?: number; month?: number }
+}
+
+export const getMyPayslips = async (): Promise<StaffPayrollSummary[] | null> => {
+  const res = await api.get<ApiResponse<StaffPayrollSummary[]>>('/v1/app/staff/payslips')
+  return (res as ApiResponse<StaffPayrollSummary[]> | null)?.responseObject ?? null
+}
+
+/** Single payslip for current staff (by payroll id). */
+export interface PayslipDetail {
+  payrollId: string
+  period?: string
+  staffSnapshot?: { name?: string; empCode?: string; department?: string; designation?: string }
+  attendanceSnapshot?: { year?: number; month?: number; workingDays?: number; presentDays?: number }
+  earnings?: { componentName?: string; amount?: number }[]
+  deductions?: { componentName?: string; amount?: number }[]
+  grossEarnings?: number
+  grossDeductions?: number
+  netPayable?: number
+  paymentInfo?: { paymentMode?: string; paidAt?: string; paidBy?: string }
+  payrollDate?: string
+}
+
+export const getMyPayslip = async (payrollId: string): Promise<PayslipDetail | null> => {
+  const res = await api.get<ApiResponse<PayslipDetail>>(`/v1/app/staff/payslips/${payrollId}`)
+  return (res as ApiResponse<PayslipDetail> | null)?.responseObject ?? null
+}
+
+/** Timetable slots for the logged-in teacher (current batch). */
+export interface TimetableSlotItem {
+  id: string
+  dayOfWeek: string
+  period: number
+  startTime: string
+  endTime: string
+  subjectId?: string
+  subjectName?: string
+  staffId?: string
+  staffName?: string
+  room?: string
+  courseId?: string
+  courseName?: string
+  year?: string
+  section?: string
+}
+
+export const getMyTimetable = async (batchId: string): Promise<TimetableSlotItem[] | null> => {
+  const res = await api.get<ApiResponse<TimetableSlotItem[]>>('/v1/app/staff/timetable', {
+    params: { batchId },
+  })
+  return (res as ApiResponse<TimetableSlotItem[]> | null)?.responseObject ?? null
+}
+
+/** My attendance report (current staff only). Optional date range. */
+export const getMyAttendanceReport = async (
+  startDate?: string,
+  endDate?: string
+): Promise<StaffAttendance[] | null> => {
+  const res = await api.get<ApiResponse<StaffAttendance[]>>('/v1/app/staff/attendance/report', {
+    params: { startDate, endDate },
+  })
+  return (res as ApiResponse<StaffAttendance[]> | null)?.responseObject ?? null
 }
 
 // Staff Attendance Types

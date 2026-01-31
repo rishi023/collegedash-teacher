@@ -75,6 +75,8 @@ export interface Course {
 export interface HomeworkItem {
   subjectName: string
   homework: string
+  /** URLs of attached images or PDFs (from upload). */
+  attachmentUrls?: string[]
 }
 
 // Homework payload

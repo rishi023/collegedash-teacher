@@ -2,14 +2,14 @@ import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
-import { getSubjects, Subject } from '@/services/account'
+import { getMySubjects, type StaffSubjectItem } from '@/services/account'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function SubjectsScreen() {
   const { user } = useAuth()
-  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [subjects, setSubjects] = useState<StaffSubjectItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   const backgroundColor = useThemeColor({}, 'secondary')
@@ -21,27 +21,28 @@ export default function SubjectsScreen() {
 
   useEffect(() => {
     const fetchSubjects = async () => {
+      if (!user?.staffDetails?.institutionId) {
+        setIsLoading(false)
+        return
+      }
       try {
-        const batchId = user?.studentDetails?.batchId
-        const classId = user?.studentDetails?.classId
-        const section = user?.studentDetails?.section
-
-        if (batchId && classId && section) {
-          setIsLoading(true)
-          const response = await getSubjects(batchId, classId, section)
-          if (response?.responseObject) {
-            setSubjects(response.responseObject)
-          }
+        setIsLoading(true)
+        const list = await getMySubjects()
+        if (list && Array.isArray(list)) {
+          setSubjects(list)
+        } else {
+          setSubjects([])
         }
       } catch (error) {
         console.error('Error fetching subjects:', error)
+        setSubjects([])
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchSubjects()
-  }, [user?.studentDetails?.batchId, user?.studentDetails?.classId, user?.studentDetails?.section])
+  }, [user?.staffDetails?.institutionId])
 
   return (
     <SafeAreaView
@@ -60,7 +61,7 @@ export default function SubjectsScreen() {
           <View style={styles.subjectsContainer}>
             {subjects.map((subject, index) => (
               <View
-                key={index}
+                key={`${subject.courseId}-${subject.year}-${subject.section}-${subject.subjectId}-${index}`}
                 style={[styles.subjectCard, { backgroundColor: cardBackground, borderColor }]}
               >
                 <View style={styles.subjectHeader}>
@@ -69,12 +70,12 @@ export default function SubjectsScreen() {
                   </View>
                   <View style={styles.subjectInfo}>
                     <ThemedText style={[styles.subjectName, { color: textColor }]}>
-                      {subject.subjectName}
+                      {subject.subjectName ?? subject.skillName ?? 'Subject'}
                     </ThemedText>
                     <View style={styles.teacherRow}>
                       <IconSymbol name="person.fill" size={14} color={mutedColor} />
                       <ThemedText style={[styles.teacherText, { color: mutedColor }]}>
-                        {subject.teacherName}
+                        {[subject.courseName, subject.year, subject.section].filter(Boolean).join(' • ') || 'Assigned'}
                       </ThemedText>
                     </View>
                   </View>

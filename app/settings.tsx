@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { APP_INFO } from '@/constants'
 import { useAuth } from '@/contexts/AuthContext'
+import { useBottomSheet } from '@/contexts/BottomSheetContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { router } from 'expo-router'
@@ -31,6 +32,7 @@ export default function SettingsScreen() {
   const borderColor = useThemeColor({}, 'border')
   const { theme, setTheme } = useTheme()
   const { logout } = useAuth()
+  const { showConfirm, showAlert } = useBottomSheet()
 
   // Settings state
   const [notifications, setNotifications] = useState(true)
@@ -39,12 +41,16 @@ export default function SettingsScreen() {
   const [autoSync, setAutoSync] = useState(true)
 
   const showThemeSelector = () => {
-    Alert.alert('Choose Theme', 'Select your preferred theme', [
-      { text: 'System', onPress: () => setTheme('system') },
-      { text: 'Light', onPress: () => setTheme('light') },
-      { text: 'Dark', onPress: () => setTheme('dark') },
-      { text: 'Cancel', style: 'cancel' },
-    ])
+    showConfirm({
+      title: 'Choose Theme',
+      message: 'Select your preferred theme',
+      buttons: [
+        { text: 'System', onPress: () => setTheme('system') },
+        { text: 'Light', onPress: () => setTheme('light') },
+        { text: 'Dark', onPress: () => setTheme('dark') },
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+      ],
+    })
   }
 
   const getThemeIcon = () => {
@@ -70,22 +76,26 @@ export default function SettingsScreen() {
   }
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await logout()
-            router.replace('/login')
-          } catch (error) {
-            console.error(error)
-            Alert.alert('Error', 'Failed to logout. Please try again.')
-          }
+    showConfirm({
+      title: 'Logout',
+      message: 'Are you sure you want to logout?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout()
+              router.replace('/login')
+            } catch (error) {
+              console.error(error)
+              showAlert('Error', 'Failed to logout. Please try again.')
+            }
+          },
         },
-      },
-    ])
+      ],
+    })
   }
 
   const settingsSections: SettingSection[] = [
@@ -258,7 +268,7 @@ export default function SettingsScreen() {
             {APP_INFO.NAME} Teacher App v1.0.0
           </ThemedText>
           <ThemedText style={[styles.footerSubtext, { color: mutedColor }]}>
-            School Management System
+            College Management System
           </ThemedText>
         </View>
       </ScrollView>
