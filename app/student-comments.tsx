@@ -403,7 +403,7 @@ export default function StudentCommentsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { flexGrow: 1, padding: 20, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   loadingText: { marginTop: 12, fontSize: 14 },
   title: { fontSize: 20, fontWeight: '700', marginBottom: 8 },

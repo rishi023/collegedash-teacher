@@ -7,6 +7,7 @@ import { useFonts } from 'expo-font'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import React, { useEffect } from 'react'
+import { Platform } from 'react-native'
 import 'react-native-reanimated'
 
 import { AppHeader } from '@/components/AppHeader'
@@ -31,6 +32,15 @@ function LayoutContent() {
         setOnboardingChecked(true)
       })
     })
+  }, [])
+
+  // Ensure full-height chain on web so ScrollView can scroll
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return
+    const style = document.createElement('style')
+    style.textContent = 'html, body, #root { height: 100%; margin: 0; }'
+    document.head.appendChild(style)
+    return () => { document.head.removeChild(style) }
   }, [])
 
   useEffect(() => {

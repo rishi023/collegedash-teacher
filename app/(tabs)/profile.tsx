@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import {
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -304,7 +305,20 @@ export default function ProfileScreen() {
       edges={{ top: 'additive', bottom: 'off' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View
+        style={[
+          styles.scrollWrapper,
+          Platform.OS === 'web' && styles.scrollWrapperWeb,
+          Platform.OS === 'android' && styles.scrollWrapperAndroid,
+        ]}
+        collapsable={false}
+      >
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          removeClippedSubviews={false}
+        >
         {isLoadingProfile ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={primaryColor} />
@@ -409,6 +423,7 @@ export default function ProfileScreen() {
           </>
         )}
       </ScrollView>
+      </View>
 
       <Modal
         visible={showPasswordModal}
@@ -500,7 +515,19 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
   },
+  scrollWrapper: {
+    flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+  },
+  scrollWrapperWeb: Platform.OS === 'web'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' as const }
+    : {},
+  scrollWrapperAndroid: Platform.OS === 'android'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 }
+    : {},
   header: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -513,6 +540,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+    ...(Platform.OS === 'web' ? { overflow: 'auto' as const } : {}),
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
   profileHeader: {
     alignItems: 'center',

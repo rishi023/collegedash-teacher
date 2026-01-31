@@ -133,8 +133,10 @@ export default function GrievanceDetailScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <View style={styles.scrollWrapper}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, styles.scrollContent]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -229,13 +231,17 @@ export default function GrievanceDetailScreen() {
             ))}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollView: { flex: 1, minHeight: 0 },
+  scrollContent: { flexGrow: 1 },
   centered: {
     flex: 1,
     justifyContent: 'center',

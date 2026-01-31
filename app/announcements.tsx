@@ -301,8 +301,10 @@ export default function AnnouncementsScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <View style={styles.scrollWrapper}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, styles.scrollContent]}
         onScroll={onScroll}
         scrollEventThrottle={200}
         refreshControl={
@@ -390,6 +392,7 @@ export default function AnnouncementsScreen() {
           )}
         </View>
       </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -397,6 +400,13 @@ export default function AnnouncementsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   scroll: {
     padding: SPACING.md,

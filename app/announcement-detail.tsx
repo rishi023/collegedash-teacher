@@ -114,7 +114,8 @@ export default function AnnouncementDetailScreen() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, styles.scrollContent]}
         showsVerticalScrollIndicator={false}
       >
         {firstImageUrl ? (
@@ -194,6 +195,12 @@ export default function AnnouncementDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   scroll: {
     padding: SPACING.md,

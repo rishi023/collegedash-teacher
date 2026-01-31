@@ -3,6 +3,7 @@ import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBottomSheet } from '@/contexts/BottomSheetContext'
+import { getCardShadow } from '@/constants/Material'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { APP_INFO } from '@/constants'
 import * as Haptics from 'expo-haptics'
@@ -250,7 +251,21 @@ export default function MoreScreen() {
       edges={{ top: 'additive', bottom: 'off' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <View
+        style={[
+          styles.scrollWrapper,
+          Platform.OS === 'web' && styles.scrollWrapperWeb,
+          Platform.OS === 'android' && styles.scrollWrapperAndroid,
+        ]}
+        collapsable={false}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={Platform.OS === 'android'}
+          removeClippedSubviews={false}
+        >
         <View style={styles.header}>
           <ThemedText style={[styles.headerTitle, { color: textColor }]}>More</ThemedText>
           <ThemedText style={[styles.headerSubtitle, { color: mutedColor }]}>
@@ -357,7 +372,8 @@ export default function MoreScreen() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -365,6 +381,28 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  },
+  scrollWrapper: {
+    flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+  },
+  scrollWrapperWeb: Platform.OS === 'web'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' as const }
+    : {},
+  scrollWrapperAndroid: Platform.OS === 'android'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 }
+    : {},
+  scrollView: {
+    flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+    ...(Platform.OS === 'web' ? { overflow: 'auto' as const } : {}),
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
   header: {
     padding: 20,
@@ -396,11 +434,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...getCardShadow(),
   },
   quickActionIcon: {
     width: 48,
@@ -419,11 +453,7 @@ const styles = StyleSheet.create({
   },
   menuItems: {
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...getCardShadow(),
   },
   menuItem: {
     flexDirection: 'row',
@@ -471,11 +501,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...getCardShadow(),
   },
   logoutText: {
     fontSize: 16,

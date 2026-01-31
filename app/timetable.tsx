@@ -142,9 +142,12 @@ export default function TimetableScreen() {
         </ScrollView>
       </View>
 
+      <View style={styles.scrollWrapper}>
       <ScrollView
         style={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryColor]} />}
       >
         {/* Selected Day Title */}
@@ -196,6 +199,7 @@ export default function TimetableScreen() {
           )}
         </View>
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -205,6 +209,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     flex: 1,
   },
+  scrollWrapper: { flex: 1, minHeight: 0 },
   center: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -226,6 +231,9 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   daySelector: {
     marginHorizontal: 20,

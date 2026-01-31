@@ -26,6 +26,8 @@ export default function TabLayout() {
           <AppHeader title={TAB_HEADER_TITLES[route.name] ?? 'Dashboard'} showBack={false} />
         ),
         headerShadowVisible: false,
+        contentStyle: { flex: 1, minHeight: 0 },
+        sceneContainerStyle: { flex: 1, minHeight: 0 },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarShowLabel: true,

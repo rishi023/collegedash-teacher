@@ -57,7 +57,8 @@ export default function AttendanceReportScreen() {
   return (
     <SafeAreaView edges={['bottom']} style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, styles.scrollContentGrow]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryColor]} />
         }
@@ -97,6 +98,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: { flex: 1 },
+  scrollContentGrow: { flexGrow: 1 },
   scrollContent: {
     padding: 16,
     paddingBottom: 32,

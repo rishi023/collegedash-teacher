@@ -49,7 +49,8 @@ export default function SubjectsScreen() {
       edges={{ top: 'additive', bottom: 'off' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <View style={styles.scrollWrapper}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={true}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={primaryColor} />
@@ -95,6 +96,7 @@ export default function SubjectsScreen() {
           </View>
         )}
       </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -103,6 +105,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

@@ -90,7 +90,8 @@ export default function EContentChaptersScreen() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, styles.scrollContent]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} />
@@ -156,6 +157,8 @@ export default function EContentChaptersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
   scroll: { padding: 16, paddingBottom: 24 },
   headerCard: {
     paddingVertical: 16,

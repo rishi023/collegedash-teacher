@@ -76,8 +76,10 @@ export default function EContentScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <View style={styles.scrollWrapper}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, styles.scrollContent]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} />
@@ -131,12 +133,16 @@ export default function EContentScreen() {
           </View>
         )}
       </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
   scroll: { padding: 16, paddingBottom: 24 },
   loading: { alignItems: 'center', paddingVertical: 48 },
   loadingText: { marginTop: 12, fontSize: 14 },

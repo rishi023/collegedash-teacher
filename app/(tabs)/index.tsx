@@ -6,6 +6,7 @@ import { Href, router } from 'expo-router'
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Dimensions,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -15,6 +16,7 @@ import {
   Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { getCardShadow } from '@/constants/Material'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   getDashboardSummary,
@@ -134,12 +136,24 @@ export default function DashboardScreen() {
       edges={{ top: 'additive', bottom: 'off' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={fetchDashboard} colors={[primaryColor]} />
-        }
+      <View
+        style={[
+          styles.scrollWrapper,
+          Platform.OS === 'web' && styles.scrollWrapperWeb,
+          Platform.OS === 'android' && styles.scrollWrapperAndroid,
+        ]}
+        collapsable={false}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={Platform.OS === 'android'}
+          removeClippedSubviews={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={fetchDashboard} colors={[primaryColor]} />
+          }
+        >
         <View style={[styles.header, { backgroundColor: cardBackground }]}>
           <View style={styles.welcomeSection}>
             <ThemedText style={[styles.welcomeText, { color: mutedColor }]}>
@@ -318,7 +332,7 @@ export default function DashboardScreen() {
               })}
             </View>
           ) : (
-            <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+            <View style={[styles.emptyStateCard, { backgroundColor: cardBackground }]}>
               <ThemedText style={[styles.noDataText, { color: mutedColor }]}>No news available</ThemedText>
             </View>
           )}
@@ -413,14 +427,15 @@ export default function DashboardScreen() {
               })}
             </View>
           ) : (
-            <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+            <View style={[styles.emptyStateCard, { backgroundColor: cardBackground }]}>
               <ThemedText style={[styles.noDataText, { color: mutedColor }]}>
                 No notices or announcements available
               </ThemedText>
             </View>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -428,6 +443,28 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { minHeight: '100vh' as unknown as number } : {}),
+  },
+  scrollWrapper: {
+    flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+  },
+  scrollWrapperWeb: Platform.OS === 'web'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' as const }
+    : {},
+  scrollWrapperAndroid: Platform.OS === 'android'
+    ? { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 }
+    : {},
+  scrollView: {
+    flex: 1,
+    minHeight: 0,
+    flexBasis: 0,
+    ...(Platform.OS === 'web' ? { overflow: 'auto' as const } : {}),
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
   header: {
     padding: 20,
@@ -501,15 +538,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   actionCard: {
+    ...getCardShadow(),
     width: (width - 52) / 2,
     padding: 16,
     borderRadius: 12,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   actionIconContainer: {
     marginBottom: 12,
@@ -527,17 +560,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   recentContentCard: {
+    ...getCardShadow(),
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
     borderRadius: 12,
     marginBottom: 8,
     gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   recentContentTitle: {
     flex: 1,
@@ -555,17 +584,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   announcementCard: {
+    ...getCardShadow(),
     flexDirection: 'row',
     alignItems: 'stretch',
     padding: 0,
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   announcementCardImage: {
     width: 88,
@@ -616,6 +641,18 @@ const styles = StyleSheet.create({
   noDataText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  emptyStateCard: {
+    ...getCardShadow(),
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
+    minHeight: 80,
+    marginBottom: 12,
   },
   announcementMessage: {
     fontSize: 12,

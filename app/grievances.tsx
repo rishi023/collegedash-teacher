@@ -61,13 +61,16 @@ export default function GrievancesScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => fetchList(true)} tintColor={primaryColor} />
-        }
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.scrollWrapper}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scroll, styles.scrollContent]}
+          showsVerticalScrollIndicator={true}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchList(true)} tintColor={primaryColor} />
+          }
+          showsVerticalScrollIndicator={true}
+        >
         <SectionHeader
           title="Grievances assigned to you"
           style={{ paddingHorizontal: 20, marginBottom: 12 }}
@@ -116,13 +119,17 @@ export default function GrievancesScreen() {
             ))}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollView: { flex: 1, minHeight: 0 },
+  scrollContent: { flexGrow: 1 },
   scroll: { padding: 20, paddingBottom: 40 },
   subtitle: { fontSize: 14, marginBottom: 20, lineHeight: 20 },
   centered: { paddingVertical: 40, alignItems: 'center' },

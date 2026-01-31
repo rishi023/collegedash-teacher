@@ -63,7 +63,7 @@ export default function PayslipDetailScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, styles.scrollContentGrow]}>
         <ThemedText style={[styles.title, { color: textColor }]}>Payslip – {period}</ThemedText>
         <View style={[styles.card, { backgroundColor: cardBackground }]}>
           <ThemedText style={[styles.name, { color: textColor }]}>{name}</ThemedText>
@@ -100,6 +100,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: { flex: 1 },
+  scrollContentGrow: { flexGrow: 1 },
   scrollContent: {
     padding: 16,
     paddingBottom: 32,

@@ -210,7 +210,8 @@ export default function SettingsScreen() {
       edges={{ top: 'off', bottom: 'additive' }}
       style={[styles.container, { backgroundColor }]}
     >
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.scrollWrapper}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {settingsSections.map((section, sectionIndex) => (
           <View key={sectionIndex} style={styles.section}>
             <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
@@ -272,6 +273,7 @@ export default function SettingsScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -280,6 +282,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollWrapper: { flex: 1, minHeight: 0 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
