@@ -90,9 +90,9 @@ export default function StaffAttendanceReport() {
         setInstitutionId(userData.institutionIds[0])
       }
 
-      const res = await getStaffProfile()
-      if (res?.responseObject) {
-        setStaffProfile(res.responseObject)
+      const profile = await getStaffProfile()
+      if (profile) {
+        setStaffProfile(profile)
       } else {
         Alert.alert('Error', 'Could not load staff profile')
       }
