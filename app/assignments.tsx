@@ -387,11 +387,17 @@ export default function AssignmentsScreen() {
   const reportSection = reportSections[reportSectionIndex]
 
   return (
-    <SafeAreaView edges={{ top: 'off', bottom: 'additive' }} style={[styles.container, { backgroundColor }]}>
+    <SafeAreaView
+      edges={{ top: 'off', bottom: 'additive' }}
+      style={[styles.container, { backgroundColor }]}
+    >
       {/* Tab Header */}
       <View style={[styles.tabContainer, { backgroundColor: cardBackground }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'create' && { borderBottomColor: primaryColor, borderBottomWidth: 2 }]}
+          style={[
+            styles.tab,
+            activeTab === 'create' && { borderBottomColor: primaryColor, borderBottomWidth: 2 },
+          ]}
           onPress={() => setActiveTab('create')}
         >
           <ThemedText
@@ -401,7 +407,10 @@ export default function AssignmentsScreen() {
           </ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'report' && { borderBottomColor: primaryColor, borderBottomWidth: 2 }]}
+          style={[
+            styles.tab,
+            activeTab === 'report' && { borderBottomColor: primaryColor, borderBottomWidth: 2 },
+          ]}
           onPress={() => setActiveTab('report')}
         >
           <ThemedText
@@ -446,7 +455,9 @@ export default function AssignmentsScreen() {
 
             {/* Section Dropdown */}
             <View style={styles.fieldContainer}>
-              <ThemedText style={[styles.label, { color: textColor }]}>Section (Optional)</ThemedText>
+              <ThemedText style={[styles.label, { color: textColor }]}>
+                Section (Optional)
+              </ThemedText>
               <TouchableOpacity
                 style={[styles.dropdown, { backgroundColor, borderColor }]}
                 onPress={() => setShowSectionModal(true)}
@@ -487,12 +498,18 @@ export default function AssignmentsScreen() {
               </ThemedText>
 
               {homeworkList.map((item, index) => (
-                <View key={`subject-${index}`} style={[styles.subjectItem, { borderTopColor: borderColor }]}>
+                <View
+                  key={`subject-${index}`}
+                  style={[styles.subjectItem, { borderTopColor: borderColor }]}
+                >
                   <ThemedText style={[styles.subjectName, { color: textColor }]}>
                     {item.subjectName}
                   </ThemedText>
                   <TextInput
-                    style={[styles.homeworkInput, { backgroundColor, borderColor, color: textColor }]}
+                    style={[
+                      styles.homeworkInput,
+                      { backgroundColor, borderColor, color: textColor },
+                    ]}
                     value={item.homework}
                     onChangeText={text => updateHomework(index, text)}
                     placeholder="Enter assignment details..."
@@ -501,7 +518,10 @@ export default function AssignmentsScreen() {
                   />
                   <View style={styles.attachmentRow}>
                     <TouchableOpacity
-                      style={[styles.attachButton, { backgroundColor: primaryColor + '20', borderColor: primaryColor }]}
+                      style={[
+                        styles.attachButton,
+                        { backgroundColor: primaryColor + '20', borderColor: primaryColor },
+                      ]}
                       onPress={() => addAttachment(index)}
                       disabled={uploadingIndex !== null}
                     >
@@ -516,18 +536,31 @@ export default function AssignmentsScreen() {
                     {(item.attachmentUrls?.length ?? 0) > 0 && (
                       <View style={styles.attachmentChips}>
                         {(item.attachmentUrls ?? []).map((url, urlIndex) => {
-                          const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i.test(url) || url.includes('image')
+                          const isImage =
+                            /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i.test(url) ||
+                            url.includes('image')
                           const label = isImage ? 'Image' : 'PDF'
                           return (
-                            <View key={urlIndex} style={[styles.attachmentChip, { backgroundColor: cardBackground, borderColor }]}>
-                              <ThemedText style={[styles.attachmentChipText, { color: textColor }]} numberOfLines={1}>
+                            <View
+                              key={urlIndex}
+                              style={[
+                                styles.attachmentChip,
+                                { backgroundColor: cardBackground, borderColor },
+                              ]}
+                            >
+                              <ThemedText
+                                style={[styles.attachmentChipText, { color: textColor }]}
+                                numberOfLines={1}
+                              >
                                 {label} {urlIndex + 1}
                               </ThemedText>
                               <TouchableOpacity
                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                 onPress={() => removeAttachment(index, urlIndex)}
                               >
-                                <ThemedText style={{ color: mutedColor, fontSize: 14 }}>✕</ThemedText>
+                                <ThemedText style={{ color: mutedColor, fontSize: 14 }}>
+                                  ✕
+                                </ThemedText>
                               </TouchableOpacity>
                             </View>
                           )
@@ -588,7 +621,9 @@ export default function AssignmentsScreen() {
 
             {/* Section Dropdown */}
             <View style={styles.fieldContainer}>
-              <ThemedText style={[styles.label, { color: textColor }]}>Section (Optional)</ThemedText>
+              <ThemedText style={[styles.label, { color: textColor }]}>
+                Section (Optional)
+              </ThemedText>
               <TouchableOpacity
                 style={[styles.dropdown, { backgroundColor, borderColor }]}
                 onPress={() => setShowReportSectionModal(true)}
@@ -682,17 +717,31 @@ export default function AssignmentsScreen() {
 
       {/* CREATE TAB MODALS */}
       <Modal visible={showCourseModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCourseModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCourseModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
             <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Course</ThemedText>
             <ScrollView>
               {courses.map((course, index) => (
                 <TouchableOpacity
                   key={`course-${index}`}
-                  style={[styles.modalOption, { borderBottomColor: borderColor }, selectedCourseIndex === index && { backgroundColor: primaryColor + '20' }]}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedCourseIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
                   onPress={() => handleCourseSelect(index)}
                 >
-                  <ThemedText style={[styles.modalOptionText, { color: textColor }, selectedCourseIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedCourseIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
                     {course.name}
                   </ThemedText>
                 </TouchableOpacity>
@@ -703,17 +752,31 @@ export default function AssignmentsScreen() {
       </Modal>
 
       <Modal visible={showYearModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowYearModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowYearModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
             <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Year</ThemedText>
             <ScrollView>
               {years.map((year, index) => (
                 <TouchableOpacity
                   key={`year-${index}`}
-                  style={[styles.modalOption, { borderBottomColor: borderColor }, selectedYearIndex === index && { backgroundColor: primaryColor + '20' }]}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    selectedYearIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
                   onPress={() => handleYearSelect(index)}
                 >
-                  <ThemedText style={[styles.modalOptionText, { color: textColor }, selectedYearIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      selectedYearIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
                     {year.name}
                   </ThemedText>
                 </TouchableOpacity>
@@ -724,24 +787,45 @@ export default function AssignmentsScreen() {
       </Modal>
 
       <Modal visible={showSectionModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSectionModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSectionModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
-            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Section</ThemedText>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>
+              Select Section
+            </ThemedText>
             <ScrollView>
               {sections.length > 0 ? (
                 sections.map((section, index) => (
                   <TouchableOpacity
                     key={`section-${index}`}
-                    style={[styles.modalOption, { borderBottomColor: borderColor }, selectedSectionIndex === index && { backgroundColor: primaryColor + '20' }]}
+                    style={[
+                      styles.modalOption,
+                      { borderBottomColor: borderColor },
+                      selectedSectionIndex === index && { backgroundColor: primaryColor + '20' },
+                    ]}
                     onPress={() => handleSectionSelect(index)}
                   >
-                    <ThemedText style={[styles.modalOptionText, { color: textColor }, selectedSectionIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                    <ThemedText
+                      style={[
+                        styles.modalOptionText,
+                        { color: textColor },
+                        selectedSectionIndex === index && {
+                          color: primaryColor,
+                          fontWeight: '600',
+                        },
+                      ]}
+                    >
                       {section.name}
                     </ThemedText>
                   </TouchableOpacity>
                 ))
               ) : (
-                <ThemedText style={[styles.noDataText, { color: mutedColor }]}>No sections available</ThemedText>
+                <ThemedText style={[styles.noDataText, { color: mutedColor }]}>
+                  No sections available
+                </ThemedText>
               )}
             </ScrollView>
           </View>
@@ -750,17 +834,31 @@ export default function AssignmentsScreen() {
 
       {/* REPORT TAB MODALS */}
       <Modal visible={showReportCourseModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReportCourseModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReportCourseModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
             <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Course</ThemedText>
             <ScrollView>
               {courses.map((course, index) => (
                 <TouchableOpacity
                   key={`rcourse-${index}`}
-                  style={[styles.modalOption, { borderBottomColor: borderColor }, reportCourseIndex === index && { backgroundColor: primaryColor + '20' }]}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    reportCourseIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
                   onPress={() => handleReportCourseSelect(index)}
                 >
-                  <ThemedText style={[styles.modalOptionText, { color: textColor }, reportCourseIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      reportCourseIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
                     {course.name}
                   </ThemedText>
                 </TouchableOpacity>
@@ -771,17 +869,31 @@ export default function AssignmentsScreen() {
       </Modal>
 
       <Modal visible={showReportYearModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReportYearModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReportYearModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
             <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Year</ThemedText>
             <ScrollView>
               {reportYears.map((year, index) => (
                 <TouchableOpacity
                   key={`ryear-${index}`}
-                  style={[styles.modalOption, { borderBottomColor: borderColor }, reportYearIndex === index && { backgroundColor: primaryColor + '20' }]}
+                  style={[
+                    styles.modalOption,
+                    { borderBottomColor: borderColor },
+                    reportYearIndex === index && { backgroundColor: primaryColor + '20' },
+                  ]}
                   onPress={() => handleReportYearSelect(index)}
                 >
-                  <ThemedText style={[styles.modalOptionText, { color: textColor }, reportYearIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                  <ThemedText
+                    style={[
+                      styles.modalOptionText,
+                      { color: textColor },
+                      reportYearIndex === index && { color: primaryColor, fontWeight: '600' },
+                    ]}
+                  >
                     {year.name}
                   </ThemedText>
                 </TouchableOpacity>
@@ -792,24 +904,42 @@ export default function AssignmentsScreen() {
       </Modal>
 
       <Modal visible={showReportSectionModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReportSectionModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReportSectionModal(false)}
+        >
           <View style={[styles.modalContent, { backgroundColor: cardBackground }]}>
-            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Select Section</ThemedText>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>
+              Select Section
+            </ThemedText>
             <ScrollView>
               {reportSections.length > 0 ? (
                 reportSections.map((section, index) => (
                   <TouchableOpacity
                     key={`rsection-${index}`}
-                    style={[styles.modalOption, { borderBottomColor: borderColor }, reportSectionIndex === index && { backgroundColor: primaryColor + '20' }]}
+                    style={[
+                      styles.modalOption,
+                      { borderBottomColor: borderColor },
+                      reportSectionIndex === index && { backgroundColor: primaryColor + '20' },
+                    ]}
                     onPress={() => handleReportSectionSelect(index)}
                   >
-                    <ThemedText style={[styles.modalOptionText, { color: textColor }, reportSectionIndex === index && { color: primaryColor, fontWeight: '600' }]}>
+                    <ThemedText
+                      style={[
+                        styles.modalOptionText,
+                        { color: textColor },
+                        reportSectionIndex === index && { color: primaryColor, fontWeight: '600' },
+                      ]}
+                    >
                       {section.name}
                     </ThemedText>
                   </TouchableOpacity>
                 ))
               ) : (
-                <ThemedText style={[styles.noDataText, { color: mutedColor }]}>No sections available</ThemedText>
+                <ThemedText style={[styles.noDataText, { color: mutedColor }]}>
+                  No sections available
+                </ThemedText>
               )}
             </ScrollView>
           </View>

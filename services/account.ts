@@ -1,4 +1,5 @@
 import { api, ApiResponse } from './axios'
+import { storage } from './storage'
 
 interface LoginPayload {
   username: string
@@ -129,16 +130,46 @@ export const getHomeworkByDayByCourse = async (
 export const uploadAssignmentAttachment = async (
   file: { uri: string; name: string; type: string },
 ): Promise<string | null> => {
-  const formData = new FormData()
-  formData.append('file', {
-    uri: file.uri,
-    name: file.name || 'attachment',
-    type: file.type || 'application/octet-stream',
-  } as any)
-  const res: ApiResponse<string> | null = await api.post('/v1/image', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-  return res?.responseObject ?? null
+  try {
+    const token = await storage.getToken()
+    const formData = new FormData()
+
+    const isWeb = file.uri.startsWith('blob:') || file.uri.startsWith('data:')
+
+    if (isWeb) {
+      // Web: fetch the blob and convert to File object
+      const response = await fetch(file.uri)
+      const blob = await response.blob()
+      const fileObj = new File([blob], file.name || 'attachment', {
+        type: file.type || 'application/octet-stream',
+      })
+      formData.append('file', fileObj)
+    } else {
+      // React Native: use the { uri, name, type } format
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'attachment',
+        type: file.type || 'application/octet-stream',
+      } as any)
+    }
+
+    const uploadResponse = await fetch(`${api.defaults.baseURL}/v1/image`, {
+      method: 'POST',
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+      body: formData,
+    })
+
+    if (!uploadResponse.ok) {
+      return null
+    }
+
+    const data: ApiResponse<string> = await uploadResponse.json()
+    return data?.responseObject ?? null
+  } catch {
+    return null
+  }
 }
 
 export interface AttendanceRecord {

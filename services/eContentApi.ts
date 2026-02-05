@@ -528,11 +528,11 @@ export const uploadEContent = async (
     formData.append('assignmentInstructions', metadata.assignmentInstructions)
   }
 
+  // Don't set Content-Type header manually - let axios/RN set it with proper boundary
   const res: ApiResponse<EContent> | null = await api.post(ENDPOINT, formData, {
     params: { institutionId },
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': undefined },
+    transformRequest: (data) => data, // Prevent axios from transforming FormData
   })
   return res
 }
