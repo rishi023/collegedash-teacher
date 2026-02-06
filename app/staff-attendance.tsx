@@ -10,6 +10,7 @@ import {
   markStaffAttendance,
   StaffAttendancePayload,
   updateStaffAttendance,
+  UpdateStaffAttendancePayload,
 } from '@/services/account'
 import { storage } from '@/services/storage'
 import * as Location from 'expo-location'
@@ -326,30 +327,44 @@ export default function SelfAttendanceScreen() {
     setSubmitting(true)
 
     try {
-      const payload: StaffAttendancePayload = {
-        staffId,
-        institutionId,
-        name: staffName,
-        code: staffCode,
-        inTime,
-        outTime: outTime || '',
-        attendanceDate,
-        remarks: remarks.trim(),
-        latitude: location?.latitude,
-        longitude: location?.longitude,
-      }
-
       let response
 
       if (existingAttendanceId) {
-        // Update existing attendance (PUT)
-        response = await updateStaffAttendance({ ...payload, id: existingAttendanceId })
+        // Update existing attendance (PUT) - evening flow
+        const updatePayload: UpdateStaffAttendancePayload = {
+          id: existingAttendanceId,
+          inTime,
+          outTime: outTime || '',
+          attendanceDate,
+          remarks: remarks.trim(),
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+        }
+        response = await updateStaffAttendance(updatePayload)
       } else {
-        // Create new attendance (POST)
-        response = await markStaffAttendance(payload)
+        // Create new attendance (POST) - morning flow
+        const createPayload: StaffAttendancePayload = {
+          staffId,
+          institutionId,
+          name: staffName,
+          code: staffCode,
+          inTime,
+          outTime: outTime || '',
+          attendanceDate,
+          remarks: remarks.trim(),
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+        }
+        response = await markStaffAttendance(createPayload)
       }
 
       if (response?.responseObject) {
+        // Save the id from response immediately so evening update can use it
+        const savedId = (response.responseObject as { id?: string })?.id
+        if (savedId) {
+          setExistingAttendanceId(savedId)
+        }
+
         const successMessage = existingAttendanceId
           ? 'Attendance updated successfully!'
           : 'Attendance marked successfully!'
@@ -377,10 +392,7 @@ export default function SelfAttendanceScreen() {
   // Determine button states
   const canMarkIn = canMarkAttendance && !inTime
   const canMarkOut = canMarkAttendance && inTime && !outTime
-  const canSave =
-    canMarkAttendance &&
-    inTime &&
-    (!existingAttendanceId || (existingAttendanceId && !outTime && outTime !== ''))
+  const canSave = canMarkAttendance && !!inTime
 
   // Determine save button text
   const getSaveButtonText = () => {

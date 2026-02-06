@@ -684,8 +684,18 @@ export const markStaffAttendance = async (payload: StaffAttendancePayload) => {
   return res
 }
 
-export const updateStaffAttendance = async (payload: StaffAttendancePayload & { id: string }) => {
-  const res = await api.put<StaffAttendance>('/v1/staff/attendance', payload)
+export interface UpdateStaffAttendancePayload {
+  id: string
+  inTime?: string
+  outTime?: string
+  attendanceDate: string
+  remarks?: string
+  latitude?: number
+  longitude?: number
+}
+
+export const updateStaffAttendance = async (payload: UpdateStaffAttendancePayload) => {
+  const res = await api.put<StaffAttendance>('/v1/app/staff/attendance', payload)
   return res
 }
 
