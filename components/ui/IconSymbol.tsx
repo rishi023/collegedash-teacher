@@ -61,6 +61,7 @@ const MAPPING = {
   'map': 'map',
   'globe': 'public',
   'book.fill': 'menu-book',
+  'camera.fill': 'camera-alt',
 } as IconMapping;
 
 /**

@@ -3,6 +3,7 @@ import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBottomSheet } from '@/contexts/BottomSheetContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
+import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
@@ -18,7 +19,12 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { changePassword, getStaffProfile, StaffProfile } from '@/services/account'
+import {
+  changePassword,
+  getStaffProfile,
+  StaffProfile,
+  uploadProfilePhoto,
+} from '@/services/account'
 import { APP_INFO } from '@/constants'
 
 interface ActionButton {
@@ -48,6 +54,7 @@ export default function ProfileScreen() {
   const { showConfirm, showAlert } = useBottomSheet()
 
   const [imageError, setImageError] = useState(false)
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -74,13 +81,94 @@ export default function ProfileScreen() {
     }
   }
 
-  // const handleEditProfile = () => {
-  //   Alert.alert(
-  //     'Edit Profile',
-  //     'Profile editing functionality will be available once connected to the API.',
-  //     [{ text: 'OK' }]
-  //   )
-  // }
+  const showProfilePhotoOptions = () => {
+    showConfirm({
+      title: 'Profile Picture',
+      message: 'Take a new photo or choose from your library.',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Take Photo',
+          onPress: () => pickImage('camera'),
+        },
+        {
+          text: 'Choose from Library',
+          onPress: () => pickImage('library'),
+        },
+      ],
+    })
+  }
+
+  const pickImage = async (source: 'camera' | 'library') => {
+    try {
+      let result: ImagePicker.ImagePickerResult
+
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync()
+        if (status !== 'granted') {
+          showAlert('Permission needed', 'Camera access is required to take a profile photo.')
+          return
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        })
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+        if (status !== 'granted') {
+          showAlert(
+            'Permission needed',
+            'Photo library access is required to choose a profile photo.',
+          )
+          return
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        })
+      }
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0]
+        // On web, use the File object directly (no blob fetch needed)
+        if ((asset as any).file) {
+          await uploadPhoto((asset as any).file)
+        } else {
+          await uploadPhoto({
+            uri: asset.uri,
+            name: asset.fileName || 'profile.jpg',
+            type: asset.mimeType || 'image/jpeg',
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Image picker error:', error)
+      showAlert('Error', 'Could not update profile picture. Please try again.')
+    }
+  }
+
+  const uploadPhoto = async (file: File | { uri: string; name: string; type: string }) => {
+    setIsUploadingPhoto(true)
+    try {
+      const url = await uploadProfilePhoto(file)
+      if (url) {
+        setStaffProfile(prev => (prev ? { ...prev, imageUrl: url } : prev))
+        setImageError(false)
+        showAlert('Success', 'Profile photo updated.')
+      } else {
+        showAlert('Error', 'Could not upload photo. Please try again.')
+      }
+    } catch (error) {
+      console.error('Upload profile photo error:', error)
+      showAlert('Error', 'Could not upload photo. Please try again.')
+    } finally {
+      setIsUploadingPhoto(false)
+    }
+  }
 
   const handleLogout = () => {
     showConfirm({
@@ -326,7 +414,14 @@ export default function ProfileScreen() {
         ) : (
           <>
             <View style={[styles.profileHeader, {}]}>
-              <View style={styles.avatarContainer}>
+              <TouchableOpacity
+                style={styles.avatarContainer}
+                onPress={showProfilePhotoOptions}
+                activeOpacity={0.8}
+                disabled={isUploadingPhoto}
+                accessibilityLabel="Change profile picture"
+                accessibilityRole="button"
+              >
                 {staffProfile?.imageUrl && !imageError ? (
                   <Image
                     source={{ uri: staffProfile.imageUrl }}
@@ -338,7 +433,19 @@ export default function ProfileScreen() {
                     <IconSymbol name="person.fill" size={48} color="#ffffff" />
                   </View>
                 )}
-              </View>
+                <View
+                  style={[
+                    styles.avatarEditBadge,
+                    { backgroundColor: primaryColor, borderColor: cardBackground },
+                  ]}
+                >
+                  {isUploadingPhoto ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <IconSymbol name="camera.fill" size={16} color="#ffffff" />
+                  )}
+                </View>
+              </TouchableOpacity>
               <ThemedText style={[styles.staffName, { color: textColor }]}>{fullName}</ThemedText>
               <ThemedText style={[styles.staffRole, { color: mutedColor }]}>
                 {staffProfile?.role || 'Teacher'}
@@ -555,6 +662,8 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginBottom: 16,
+    position: 'relative',
+    alignSelf: 'center',
   },
   avatar: {
     width: 80,
@@ -567,6 +676,17 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
   },
   loadingContainer: {
     flex: 1,

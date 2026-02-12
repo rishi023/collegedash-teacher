@@ -356,6 +356,36 @@ export const getStaffProfile = async (): Promise<StaffProfile | null> => {
   return res?.responseObject ?? null
 }
 
+/** Upload profile photo. Accepts a File (web) or { uri, name, type } (native). Returns the new image URL. */
+export const uploadProfilePhoto = async (file: File | { uri: string; name: string; type: string }): Promise<string | null> => {
+  try {
+    const token = await storage.getToken()
+    const formData = new FormData()
+
+    if (file instanceof File) {
+      formData.append('file', file)
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'profile.jpg',
+        type: file.type || 'image/jpeg',
+      } as any)
+    }
+
+    const res = await fetch(`${api.defaults.baseURL}/v1/staff/profile-photo`, {
+      method: 'POST',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      body: formData,
+    })
+
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.message ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Current user's institution (logo, address, lat/long for geo-check, etc.). Requires auth. */
 export interface Institution {
   id: string
