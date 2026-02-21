@@ -69,13 +69,13 @@ export default function LoginScreen() {
 
             <View style={styles.form}>
               <View style={styles.inputContainer}>
-                <ThemedText style={[styles.label, { color: textColor }]}>Email</ThemedText>
+                <ThemedText style={[styles.label, { color: textColor }]}>User Name</ThemedText>
                 <TextInput
                   style={[
                     styles.input,
                     { backgroundColor: inputBg, borderColor, color: textColor },
                   ]}
-                  placeholder="Enter your email"
+                  placeholder="Enter your user name"
                   placeholderTextColor={mutedColor}
                   value={email}
                   onChangeText={setEmail}
