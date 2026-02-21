@@ -98,6 +98,8 @@ export default function EContentScreen() {
             {subjects.map((subject, index) => {
               const accent = SUBJECT_ACCENTS[index % SUBJECT_ACCENTS.length]
               const name = subject.subjectName ?? subject.subjectId ?? 'Subject'
+              const code = subject.subjectCode ?? subject.subjectId ?? ''
+              const courseYear = [subject.courseName, subject.year].filter(Boolean).join(' · ')
               return (
                 <Pressable
                   key={`${subject.courseId}-${subject.subjectId}-${index}`}
@@ -114,11 +116,16 @@ export default function EContentScreen() {
                   <ThemedText style={[styles.cardTitle, { color: textColor }]} numberOfLines={2}>
                     {name}
                   </ThemedText>
-                  {(subject.courseName || subject.year) && (
-                    <ThemedText style={[styles.cardMeta, { color: mutedColor }]} numberOfLines={1}>
-                      {[subject.courseName, subject.year].filter(Boolean).join(' · ')}
+                  {code ? (
+                    <ThemedText style={[styles.cardCode, { color: mutedColor }]} numberOfLines={1}>
+                      {code}
                     </ThemedText>
-                  )}
+                  ) : null}
+                  {courseYear ? (
+                    <ThemedText style={[styles.cardMeta, { color: mutedColor }]} numberOfLines={1}>
+                      {courseYear}
+                    </ThemedText>
+                  ) : null}
                 </Pressable>
               )
             })}
@@ -164,7 +171,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
   },
-  cardTitle: { fontSize: 15, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
+  cardTitle: { fontSize: 15, fontWeight: '600', textAlign: 'center', marginBottom: 2 },
+  cardCode: { fontSize: 11, textAlign: 'center', marginBottom: 2, fontWeight: '500' },
   cardMeta: { fontSize: 12, textAlign: 'center' },
   empty: { alignItems: 'center', paddingVertical: 60 },
   emptyTitle: { fontSize: 18, fontWeight: '600', marginTop: 16, marginBottom: 8 },

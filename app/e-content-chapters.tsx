@@ -1,3 +1,4 @@
+import { ChapterForm } from '@/components/econtent'
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
@@ -12,6 +13,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -36,6 +38,7 @@ export default function EContentChaptersScreen() {
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [showChapterForm, setShowChapterForm] = useState(false)
 
   const fetchChapters = useCallback(async () => {
     const courseId = params.courseId?.trim()
@@ -89,6 +92,26 @@ export default function EContentChaptersScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <ChapterForm
+        visible={showChapterForm}
+        onClose={() => setShowChapterForm(false)}
+        onSuccess={() => {
+          setShowChapterForm(false)
+          fetchChapters()
+        }}
+        initialContext={
+          params.courseId && params.year && params.subjectId
+            ? {
+                courseId: params.courseId,
+                courseName: params.courseName ?? '',
+                year: params.year,
+                subjectId: params.subjectId,
+                subjectName: params.subjectName ?? params.subjectId ?? 'Subject',
+                section: params.section ?? undefined,
+              }
+            : undefined
+        }
+      />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scroll, styles.scrollContent]}
@@ -105,11 +128,23 @@ export default function EContentChaptersScreen() {
         </View>
 
         <ThemedText style={[styles.listHeading, { color: textColor }]}>Chapters</ThemedText>
-        <ThemedText style={[styles.listSubtext, { color: mutedColor }]}>
-          {chapters.length === 0
-            ? 'No chapters yet'
-            : `${chapters.length} chapter${chapters.length !== 1 ? 's' : ''} · tap to view sections`}
-        </ThemedText>
+        <View style={styles.listHeaderRow}>
+          <ThemedText style={[styles.listSubtext, { color: mutedColor }]}>
+            {chapters.length === 0
+              ? 'No chapters yet'
+              : `${chapters.length} chapter${chapters.length !== 1 ? 's' : ''} · tap to view sections`}
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: primaryColor }]}
+            onPress={() => {
+              if (Platform.OS !== 'web') triggerHaptic('selection')
+              setShowChapterForm(true)
+            }}
+          >
+            <IconSymbol name="plus" size={20} color="#fff" />
+            <ThemedText style={styles.addButtonLabel}>Add chapter</ThemedText>
+          </TouchableOpacity>
+        </View>
 
         {loading ? (
           <View style={styles.loading}>
@@ -170,7 +205,10 @@ const styles = StyleSheet.create({
   subjectLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6 },
   subjectName: { fontSize: 20, fontWeight: '700', lineHeight: 26 },
   listHeading: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  listSubtext: { fontSize: 13, marginBottom: 16 },
+  listHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  listSubtext: { fontSize: 13, flex: 1 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 },
+  addButtonLabel: { color: '#fff', fontSize: 14, fontWeight: '600' },
   loading: { alignItems: 'center', paddingVertical: 32 },
   list: { gap: 12 },
   row: {

@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -27,11 +28,23 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+/** When provided, form is pre-filled and course/year/subject are locked (add chapter for this subject only). */
+export interface ChapterFormInitialContext {
+  courseId: string
+  courseName: string
+  year: string
+  subjectId: string
+  subjectName: string
+  section?: string
+}
+
 interface ChapterFormProps {
   visible: boolean
   onClose: () => void
   onSuccess: () => void
   editingChapter?: Chapter | null
+  /** Pre-fill and lock course/year/subject (e.g. when opening Add chapter from a subject's chapters screen). */
+  initialContext?: ChapterFormInitialContext | null
 }
 
 export default function ChapterForm({
@@ -39,6 +52,7 @@ export default function ChapterForm({
   onClose,
   onSuccess,
   editingChapter,
+  initialContext,
 }: ChapterFormProps) {
   // Theme colors
   const backgroundColor = useThemeColor({}, 'secondary')
@@ -81,6 +95,8 @@ export default function ChapterForm({
     }
   }, [visible])
 
+  const contextLocked = Boolean(initialContext && !editingChapter)
+
   // Populate form when editing
   useEffect(() => {
     if (editingChapter && visible) {
@@ -90,10 +106,23 @@ export default function ChapterForm({
       setSelectedCourseId(editingChapter.courseId)
       setSelectedCourseName(editingChapter.courseName)
       setSelectedYearName(editingChapter.year)
+      setSelectedYearId(editingChapter.year)
       setSelectedSubjectId(editingChapter.subjectId)
       setSelectedSubjectName(editingChapter.subjectName)
     }
   }, [editingChapter, visible])
+
+  // Pre-fill from initialContext when opening for a specific subject (e.g. from e-content-chapters)
+  useEffect(() => {
+    if (visible && initialContext && !editingChapter) {
+      setSelectedCourseId(initialContext.courseId)
+      setSelectedCourseName(initialContext.courseName)
+      setSelectedYearId(initialContext.year)
+      setSelectedYearName(initialContext.year)
+      setSelectedSubjectId(initialContext.subjectId)
+      setSelectedSubjectName(initialContext.subjectName)
+    }
+  }, [visible, initialContext, editingChapter])
 
   // Fetch years when course changes
   useEffect(() => {
@@ -184,6 +213,7 @@ export default function ChapterForm({
         subjectId: selectedSubjectId,
         subjectName: selectedSubjectName,
         status: saveAsPublished ? ContentStatus.PUBLISHED : status,
+        ...(initialContext?.section != null && initialContext.section !== '' && { section: initialContext.section }),
       }
 
       let response
@@ -193,7 +223,7 @@ export default function ChapterForm({
         response = await createChapter(payload)
       }
 
-      if (response) {
+      if (response?.responseObject != null) {
         Alert.alert(
           'Success',
           editingChapter ? 'Chapter updated successfully' : 'Chapter created successfully'
@@ -202,11 +232,15 @@ export default function ChapterForm({
         onSuccess()
         onClose()
       } else {
-        Alert.alert('Error', 'Failed to save chapter')
+        Alert.alert(
+          'Error',
+          'Failed to save chapter. Please check your connection and that you’re signed in, then try again.'
+        )
       }
     } catch (error) {
       console.error('Error saving chapter:', error)
-      Alert.alert('Error', 'Failed to save chapter')
+      const message = error instanceof Error ? error.message : 'Failed to save chapter'
+      Alert.alert('Error', message)
     } finally {
       setIsSubmitting(false)
     }
@@ -221,14 +255,23 @@ export default function ChapterForm({
     onSelect: (id: string, name: string) => void
   ) => (
     <Modal visible={pickerVisible} transparent animationType="slide">
-      <View style={styles.pickerModalOverlay}>
-        <View style={[styles.pickerModalContent, { backgroundColor: cardBackground }]}>
+      <Pressable style={styles.pickerModalOverlay} onPress={onPickerClose}>
+        <Pressable
+          style={[styles.pickerModalContent, { backgroundColor: cardBackground }]}
+          onPress={e => e.stopPropagation()}
+        >
           <View style={[styles.pickerModalHeader, { borderBottomColor: borderColor }]}>
             <ThemedText style={[styles.pickerModalTitle, { color: textColor }]}>
               {pickerTitle}
             </ThemedText>
-            <TouchableOpacity onPress={onPickerClose}>
-              <IconSymbol name="xmark.circle.fill" size={24} color={mutedColor} />
+            <TouchableOpacity
+              onPress={onPickerClose}
+              style={styles.pickerCloseButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityLabel="Close"
+            >
+              <ThemedText style={[styles.pickerCloseText, { color: primaryColor }]}>Close</ThemedText>
+              <IconSymbol name="xmark.circle.fill" size={26} color={mutedColor} />
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.pickerOptions}>
@@ -264,8 +307,8 @@ export default function ChapterForm({
               ))
             )}
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   )
 
@@ -302,10 +345,10 @@ export default function ChapterForm({
               style={[
                 styles.formSelect,
                 { backgroundColor: inputBackground, borderColor: inputBorder },
-                editingChapter && styles.formSelectDisabled,
+                (editingChapter || contextLocked) && styles.formSelectDisabled,
               ]}
-              onPress={() => !editingChapter && setShowCoursePicker(true)}
-              disabled={!!editingChapter}
+              onPress={() => !editingChapter && !contextLocked && setShowCoursePicker(true)}
+              disabled={!!editingChapter || contextLocked}
             >
               <ThemedText
                 style={[styles.formSelectText, { color: selectedCourseId ? textColor : mutedColor }]}
@@ -325,10 +368,10 @@ export default function ChapterForm({
               style={[
                 styles.formSelect,
                 { backgroundColor: inputBackground, borderColor: inputBorder },
-                (!selectedCourseId || editingChapter) && styles.formSelectDisabled,
+                (!selectedCourseId || editingChapter || contextLocked) && styles.formSelectDisabled,
               ]}
-              onPress={() => selectedCourseId && !editingChapter && setShowYearPicker(true)}
-              disabled={!selectedCourseId || !!editingChapter}
+              onPress={() => selectedCourseId && !editingChapter && !contextLocked && setShowYearPicker(true)}
+              disabled={!selectedCourseId || !!editingChapter || contextLocked}
             >
               <ThemedText
                 style={[
@@ -356,10 +399,10 @@ export default function ChapterForm({
               style={[
                 styles.formSelect,
                 { backgroundColor: inputBackground, borderColor: inputBorder },
-                (!selectedYearName || editingChapter) && styles.formSelectDisabled,
+                (!selectedYearName || editingChapter || contextLocked) && styles.formSelectDisabled,
               ]}
-              onPress={() => selectedYearName && !editingChapter && setShowSubjectPicker(true)}
-              disabled={!selectedYearName || !!editingChapter}
+              onPress={() => selectedYearName && !editingChapter && !contextLocked && setShowSubjectPicker(true)}
+              disabled={!selectedYearName || !!editingChapter || contextLocked}
             >
               <ThemedText
                 style={[
@@ -557,8 +600,10 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+    minHeight: 0,
   },
   formContent: {
+    flexGrow: 1,
     padding: 20,
   },
   formGroup: {
@@ -664,6 +709,15 @@ const styles = StyleSheet.create({
   },
   pickerModalTitle: {
     fontSize: 18,
+    fontWeight: '600',
+  },
+  pickerCloseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pickerCloseText: {
+    fontSize: 16,
     fontWeight: '600',
   },
   pickerOptions: {

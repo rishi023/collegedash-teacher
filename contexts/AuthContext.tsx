@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { signIn, getStaffProfile, type StaffProfile } from '@/services/account'
+import { signIn, getStaffProfile, getRunningBatch, type StaffProfile } from '@/services/account'
 import { storage } from '@/services/storage'
 import { setLogoutCallback } from '@/services/axios'
 
@@ -49,10 +49,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const staffProfile = await getStaffProfile()
           if (staffProfile) {
             userData.staffDetails = staffProfile
-            await storage.setUserData(userData)
           }
         } catch (staffError) {
           console.error('Error fetching staff profile on reload:', staffError)
+        }
+
+        try {
+          const runningBatchId = await getRunningBatch()
+          if (runningBatchId != null) {
+            userData.runningBatchId = runningBatchId
+            await storage.setUserData(userData)
+          }
+        } catch (batchError) {
+          console.error('Error fetching running batch on reload:', batchError)
         }
 
         setUser(userData)
@@ -82,12 +91,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const staffProfile = await getStaffProfile()
         if (staffProfile) {
           userData.staffDetails = staffProfile
-          await storage.setUserData(userData)
-          setUser({ ...userData })
         }
       } catch (staffError) {
         console.error('Error fetching staff profile after login:', staffError)
       }
+
+      try {
+        const runningBatchId = await getRunningBatch()
+        if (runningBatchId != null) userData.runningBatchId = runningBatchId
+      } catch (batchError) {
+        console.error('Error fetching running batch after login:', batchError)
+      }
+
+      await storage.setUserData(userData)
+      setUser({ ...userData })
     } catch (error) {
       console.error('Login error:', error)
       throw error

@@ -109,7 +109,7 @@ export default function SectionForm({
         response = await createSection(payload)
       }
 
-      if (response) {
+      if (response?.responseObject != null) {
         Alert.alert(
           'Success',
           editingSection ? 'Section updated successfully' : 'Section created successfully'
@@ -118,11 +118,15 @@ export default function SectionForm({
         onSuccess()
         onClose()
       } else {
-        Alert.alert('Error', 'Failed to save section')
+        Alert.alert(
+          'Error',
+          'Failed to save section. Please check your connection and that you’re signed in, then try again.'
+        )
       }
     } catch (error) {
       console.error('Error saving section:', error)
-      Alert.alert('Error', 'Failed to save section')
+      const message = error instanceof Error ? error.message : 'Failed to save section'
+      Alert.alert('Error', message)
     } finally {
       setIsSubmitting(false)
     }
@@ -305,8 +309,10 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+    minHeight: 0,
   },
   formContent: {
+    flexGrow: 1,
     padding: 20,
   },
   chapterInfo: {

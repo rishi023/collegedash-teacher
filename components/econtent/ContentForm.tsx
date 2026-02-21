@@ -12,8 +12,8 @@ import {
   getFileColor,
   getFileIcon,
   getFileTypeLabel,
-  updateEContent,
-  uploadEContent,
+  updateContent,
+  uploadContentFile,
 } from '@/services/eContentApi'
 import * as DocumentPicker from 'expo-document-picker'
 import React, { useEffect, useState } from 'react'
@@ -203,91 +203,74 @@ export default function ContentForm({
       setIsSubmitting(true)
 
       const finalStatus = saveAsPublished ? ContentStatus.PUBLISHED : status
+      let contentUrlToUse = contentUrl.trim() || undefined
 
-      // If we have a file to upload
+      // Upload file to S3 (same as admin portal) when user selected a file
       if (selectedFile) {
-        const response = await uploadEContent(selectedFile, {
-          courseId: chapter.courseId,
-          courseName: chapter.courseName,
-          year: chapter.year,
-          subjectId: chapter.subjectId,
-          subjectName: chapter.subjectName,
-          title: title.trim(),
-          description: description.trim() || undefined,
-          chapterId: chapter.id,
-          sectionId: section.id,
-          contentType,
-          status: finalStatus,
-          content: content.trim() || undefined,
-          dueDate: dueDate || undefined,
-          maxMarks: maxMarks ? parseInt(maxMarks) : undefined,
-          assignmentInstructions: assignmentInstructions.trim() || undefined,
-        })
-
-        if (response) {
-          Alert.alert('Success', 'Content uploaded successfully')
-          resetForm()
-          onSuccess()
-          onClose()
-        } else {
-          Alert.alert('Error', 'Failed to upload content')
+        const uploadedUrl = await uploadContentFile(selectedFile)
+        if (!uploadedUrl) {
+          Alert.alert('Error', 'Failed to upload file. Please try again.')
+          setIsSubmitting(false)
+          return
         }
+        contentUrlToUse = uploadedUrl
+      }
+
+      const payload = {
+        chapterId: chapter.id,
+        sectionId: section.id,
+        classId: chapter.courseId,
+        className: chapter.courseName,
+        subjectId: chapter.subjectId,
+        subjectName: chapter.subjectName,
+        courseId: chapter.courseId,
+        courseName: chapter.courseName,
+        year: chapter.year,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        content: content.trim() || undefined,
+        contentType,
+        contentUrl: contentUrlToUse,
+        status: finalStatus,
+        dueDate: dueDate || undefined,
+        maxMarks: maxMarks ? parseInt(maxMarks) : undefined,
+        assignmentInstructions: assignmentInstructions.trim() || undefined,
+      }
+
+      let response
+      if (editingContent) {
+        response = await updateContent({ ...payload, id: editingContent.id })
       } else {
-        // For content without file (NOTES, LINK)
-        const payload = {
-          chapterId: chapter.id,
-          sectionId: section.id,
-          classId: chapter.courseId,
-          className: chapter.courseName,
-          subjectId: chapter.subjectId,
-          subjectName: chapter.subjectName,
-          courseId: chapter.courseId,
-          courseName: chapter.courseName,
-          year: chapter.year,
-          title: title.trim(),
-          description: description.trim() || undefined,
-          content: content.trim() || undefined,
-          contentType,
-          contentUrl: contentUrl.trim() || undefined,
-          status: finalStatus,
-          dueDate: dueDate || undefined,
-          maxMarks: maxMarks ? parseInt(maxMarks) : undefined,
-          assignmentInstructions: assignmentInstructions.trim() || undefined,
-        }
+        response = await createContent(payload)
+      }
 
-        let response
-        if (editingContent) {
-          response = await updateEContent(editingContent.id, payload)
-        } else {
-          response = await createContent(payload)
-        }
-
-        if (response) {
-          Alert.alert(
-            'Success',
-            editingContent ? 'Content updated successfully' : 'Content created successfully'
-          )
-          resetForm()
-          onSuccess()
-          onClose()
-        } else {
-          Alert.alert('Error', 'Failed to save content')
-        }
+      if (response?.responseObject != null) {
+        Alert.alert(
+          'Success',
+          editingContent ? 'Content updated successfully' : 'Content created successfully'
+        )
+        resetForm()
+        onSuccess()
+        onClose()
+      } else {
+        Alert.alert(
+          'Error',
+          'Failed to save content. Please check your connection and try again.'
+        )
       }
     } catch (error) {
       console.error('Error saving content:', error)
-      Alert.alert('Error', 'Failed to save content')
+      const message = error instanceof Error ? error.message : 'Failed to save content'
+      Alert.alert('Error', message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const requiresFile = [
-    ContentType.DOCUMENT,
-    ContentType.VIDEO,
-    ContentType.IMAGE,
-    ContentType.AUDIO,
-  ].includes(contentType)
+  const requiresFile = [ContentType.DOCUMENT, ContentType.IMAGE, ContentType.AUDIO].includes(
+    contentType,
+  )
+  const isVideoType = contentType === ContentType.VIDEO
 
   const isLinkType = contentType === ContentType.LINK
   const isNotesType = contentType === ContentType.NOTES
@@ -319,7 +302,12 @@ export default function ContentForm({
         </View>
 
         {/* Form */}
-        <ScrollView style={styles.form} contentContainerStyle={styles.formContent}>
+        <ScrollView
+          style={styles.form}
+          contentContainerStyle={styles.formContent}
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Section Info */}
           {chapter && section && (
             <View
@@ -469,11 +457,39 @@ export default function ContentForm({
             </View>
           )}
 
-          {/* File Upload */}
-          {requiresFile && (
+          {/* Video URL (same as admin portal: YouTube, Vimeo, etc.) */}
+          {isVideoType && (
             <View style={styles.formGroup}>
               <ThemedText style={[styles.formLabel, { color: textColor }]}>
-                File <ThemedText style={{ color: errorColor }}>*</ThemedText>
+                Video URL <ThemedText style={{ color: errorColor }}>*</ThemedText>
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.formInput,
+                  { backgroundColor: inputBackground, borderColor: inputBorder, color: textColor },
+                ]}
+                placeholder="https://www.youtube.com/watch?v=... or Vimeo link"
+                placeholderTextColor={mutedColor}
+                value={contentUrl}
+                onChangeText={setContentUrl}
+                keyboardType="url"
+                autoCapitalize="none"
+              />
+              <ThemedText style={[styles.hint, { color: mutedColor }]}>
+                Enter the video URL (e.g. YouTube, Vimeo). Or upload a video file below.
+              </ThemedText>
+            </View>
+          )}
+
+          {/* File Upload (required for DOCUMENT/IMAGE/AUDIO; optional for VIDEO) */}
+          {(requiresFile || isVideoType) && (
+            <View style={styles.formGroup}>
+              <ThemedText style={[styles.formLabel, { color: textColor }]}>
+                {requiresFile ? (
+                  <>File <ThemedText style={{ color: errorColor }}>*</ThemedText></>
+                ) : (
+                  'Video file (optional)'
+                )}
               </ThemedText>
               <Pressable
                 style={[
@@ -748,8 +764,10 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+    minHeight: 0,
   },
   formContent: {
+    flexGrow: 1,
     padding: 20,
     paddingBottom: 40,
   },
@@ -784,6 +802,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
+  },
+  formHint: {
+    fontSize: 12,
+    marginTop: 6,
   },
   formInput: {
     borderWidth: 1,

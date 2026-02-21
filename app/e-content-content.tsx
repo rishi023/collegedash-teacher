@@ -1,10 +1,16 @@
+import { ContentForm } from '@/components/econtent'
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
-import { getContentBySection, type EContent } from '@/services/eContentApi'
+import {
+  type Chapter,
+  type ContentSection,
+  getContentBySection,
+  type EContent,
+} from '@/services/eContentApi'
 import { triggerHaptic } from '@/utils/haptics'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -12,6 +18,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -79,8 +86,14 @@ export default function EContentContentScreen() {
   const params = useLocalSearchParams<{
     sectionId: string
     sectionTitle: string
+    chapterId: string
     chapterTitle: string
     subjectName: string
+    subjectId: string
+    courseId: string
+    courseName: string
+    year: string
+    section: string
   }>()
   const router = useRouter()
   const backgroundColor = useThemeColor({}, 'secondary')
@@ -93,6 +106,54 @@ export default function EContentContentScreen() {
   const [items, setItems] = useState<EContent[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [showContentForm, setShowContentForm] = useState(false)
+
+  const chapterForForm = useMemo((): Chapter | null => {
+    const id = params.chapterId?.trim()
+    if (!id) return null
+    return {
+      id,
+      title: params.chapterTitle ?? 'Chapter',
+      institutionId: '',
+      batchId: '',
+      courseId: params.courseId ?? '',
+      courseName: params.courseName ?? '',
+      year: params.year ?? '',
+      section: params.section?.trim() || undefined,
+      subjectId: params.subjectId ?? '',
+      subjectName: params.subjectName ?? 'Subject',
+      sequence: 0,
+      active: true,
+      status: 'DRAFT' as const,
+      createdBy: '',
+      createdAt: '',
+    }
+  }, [
+    params.chapterId,
+    params.chapterTitle,
+    params.courseId,
+    params.courseName,
+    params.year,
+    params.section,
+    params.subjectId,
+    params.subjectName,
+  ])
+
+  const sectionForForm = useMemo((): ContentSection | null => {
+    const id = params.sectionId?.trim()
+    if (!id) return null
+    return {
+      id,
+      title: params.sectionTitle ?? 'Section',
+      institutionId: '',
+      chapterId: params.chapterId ?? '',
+      sequence: 0,
+      active: true,
+      status: 'DRAFT' as const,
+      createdBy: '',
+      createdAt: '',
+    }
+  }, [params.sectionId, params.sectionTitle, params.chapterId])
 
   const fetchContent = useCallback(async () => {
     const sectionId = params.sectionId?.trim()
@@ -125,18 +186,14 @@ export default function EContentContentScreen() {
 
   const handleContentPress = (content: EContent) => {
     if (Platform.OS !== 'web') triggerHaptic('selection')
-    const hasUrl = !!content.contentUrl?.trim() || !!content.fileUrl?.trim()
-    const hasHtml = !!content.content?.trim()
-    if (hasUrl || hasHtml) {
-      router.push({
-        pathname: '/e-content-viewer',
-        params: {
-          contentId: content.id,
-          sectionId: params.sectionId ?? '',
-          title: content.title ?? 'Content',
-        },
-      })
-    }
+    router.push({
+      pathname: '/e-content-viewer',
+      params: {
+        contentId: content.id,
+        sectionId: params.sectionId ?? '',
+        title: content.title ?? 'Content',
+      },
+    })
   }
 
   const sectionTitle = params.sectionTitle ?? 'Section'
@@ -144,16 +201,38 @@ export default function EContentContentScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <ContentForm
+        visible={showContentForm}
+        onClose={() => setShowContentForm(false)}
+        onSuccess={() => {
+          setShowContentForm(false)
+          fetchContent()
+        }}
+        chapter={chapterForForm}
+        section={sectionForForm}
+      />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scroll, styles.scrollContent]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} />
         }
       >
         <ThemedText style={[styles.sectionLabel, { color: mutedColor }]}>{chapterTitle}</ThemedText>
-        <ThemedText style={[styles.screenTitle, { color: textColor }]}>{sectionTitle}</ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText style={[styles.screenTitle, { color: textColor }]}>{sectionTitle}</ThemedText>
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: primaryColor }]}
+            onPress={() => {
+              if (Platform.OS !== 'web') triggerHaptic('selection')
+              setShowContentForm(true)
+            }}
+          >
+            <IconSymbol name="plus" size={18} color="#fff" />
+            <ThemedText style={styles.addButtonLabel}>Add content</ThemedText>
+          </TouchableOpacity>
+        </View>
 
         {loading ? (
           <View style={styles.loading}>
@@ -229,7 +308,10 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1 },
   scroll: { padding: 16, paddingBottom: 24 },
   sectionLabel: { fontSize: 13, marginBottom: 4 },
-  screenTitle: { fontSize: 22, fontWeight: '600', marginBottom: 20 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  screenTitle: { fontSize: 22, fontWeight: '600', flex: 1 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
+  addButtonLabel: { color: '#fff', fontSize: 13, fontWeight: '600' },
   loading: { alignItems: 'center', paddingVertical: 48 },
   loadingText: { marginTop: 12, fontSize: 14 },
   empty: { alignItems: 'center', paddingVertical: 40 },

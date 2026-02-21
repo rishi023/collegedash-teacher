@@ -78,6 +78,7 @@ export default function EContentViewerScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [publishLoading, setPublishLoading] = useState(false)
+  const [contentReady, setContentReady] = useState(false)
 
   const fetchContent = useCallback(async () => {
     const sid = sectionId?.trim()
@@ -105,8 +106,20 @@ export default function EContentViewerScreen() {
   useEffect(() => {
     setLoading(true)
     setError(null)
+    setContentReady(false)
     fetchContent()
   }, [fetchContent])
+
+  useEffect(() => {
+    if (!loading && contentItem) setContentReady(false)
+  }, [loading, contentItem])
+
+  // Fallback: mark content ready after delay in case iframe onLoad doesn't fire (e.g. cross-origin)
+  useEffect(() => {
+    if (loading || !contentItem) return
+    const t = setTimeout(() => setContentReady(true), 4000)
+    return () => clearTimeout(t)
+  }, [loading, contentItem])
 
   const contentUrl = (contentItem?.contentUrl ?? contentItem?.fileUrl ?? '').trim()
   const contentHtml = contentItem?.content?.trim()
@@ -174,7 +187,9 @@ export default function EContentViewerScreen() {
       <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={primaryColor} />
-          <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
+            Loading content...
+          </ThemedText>
         </View>
       </SafeAreaView>
     )
@@ -255,13 +270,28 @@ export default function EContentViewerScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.webWrap}>
+          {!contentReady && (
+            <View style={[styles.centered, styles.contentLoader]}>
+              <ActivityIndicator size="large" color={primaryColor} />
+              <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
+                Loading content...
+              </ThemedText>
+            </View>
+          )}
           <iframe
             src={iframeSrc}
             srcDoc={iframeSrc ? undefined : htmlContent}
             title={title ?? contentItem?.title ?? 'Content'}
-            style={{ flex: 1, width: '100%', minHeight: 400, border: 'none' }}
+            style={{
+              flex: 1,
+              width: '100%',
+              minHeight: 400,
+              border: 'none',
+              opacity: contentReady ? 1 : 0,
+            }}
             allow={isVideo ? 'accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture' : undefined}
             allowFullScreen={isVideo}
+            onLoad={() => setContentReady(true)}
           />
         </View>
       </SafeAreaView>
@@ -335,7 +365,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   publishBarButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  webWrap: { flex: 1, minHeight: 400 },
+  webWrap: { flex: 1, minHeight: 400, position: 'relative' },
+  contentLoader: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
   webview: { flex: 1, backgroundColor: '#ffffff' },
   loadingOverlay: {
     position: 'absolute',

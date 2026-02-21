@@ -1,10 +1,11 @@
+import { SectionForm } from '@/components/econtent'
 import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
-import { getSections, type ContentSection } from '@/services/eContentApi'
+import { type Chapter, getSections, type ContentSection } from '@/services/eContentApi'
 import { triggerHaptic } from '@/utils/haptics'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -12,6 +13,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -21,9 +23,10 @@ export default function EContentSectionsScreen() {
     chapterId: string
     chapterTitle: string
     subjectName: string
-    courseId: string
-    year: string
     subjectId: string
+    courseId: string
+    courseName: string
+    year: string
     section: string
   }>()
   const router = useRouter()
@@ -37,6 +40,29 @@ export default function EContentSectionsScreen() {
   const [sections, setSections] = useState<ContentSection[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [showSectionForm, setShowSectionForm] = useState(false)
+
+  const chapterForForm = useMemo((): Chapter | null => {
+    const id = params.chapterId?.trim()
+    if (!id) return null
+    return {
+      id,
+      title: params.chapterTitle ?? 'Chapter',
+      institutionId: '',
+      batchId: '',
+      courseId: params.courseId ?? '',
+      courseName: params.courseName ?? '',
+      year: params.year ?? '',
+      section: params.section ?? undefined,
+      subjectId: params.subjectId ?? '',
+      subjectName: params.subjectName ?? 'Subject',
+      sequence: 0,
+      active: true,
+      status: 'DRAFT' as const,
+      createdBy: '',
+      createdAt: '',
+    }
+  }, [params.chapterId, params.chapterTitle, params.courseId, params.courseName, params.year, params.section, params.subjectId, params.subjectName])
 
   const fetchSections = useCallback(async () => {
     const chapterId = params.chapterId?.trim()
@@ -74,8 +100,14 @@ export default function EContentSectionsScreen() {
       params: {
         sectionId: sec.id,
         sectionTitle: sec.title ?? 'Section',
+        chapterId: params.chapterId ?? '',
         chapterTitle: params.chapterTitle ?? 'Chapter',
         subjectName: params.subjectName ?? 'Subject',
+        subjectId: params.subjectId ?? '',
+        courseId: params.courseId ?? '',
+        courseName: params.courseName ?? '',
+        year: params.year ?? '',
+        section: params.section ?? '',
       },
     })
   }
@@ -84,6 +116,15 @@ export default function EContentSectionsScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
+      <SectionForm
+        visible={showSectionForm}
+        onClose={() => setShowSectionForm(false)}
+        onSuccess={() => {
+          setShowSectionForm(false)
+          fetchSections()
+        }}
+        chapter={chapterForForm}
+      />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scroll, styles.scrollContent]}
@@ -96,9 +137,23 @@ export default function EContentSectionsScreen() {
           {params.subjectName ?? 'Subject'}
         </ThemedText>
         <ThemedText style={[styles.screenTitle, { color: textColor }]}>{chapterTitle}</ThemedText>
-        <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
-          Sections (topics) · tap to view content
-        </ThemedText>
+        <View style={styles.subtitleRow}>
+          <ThemedText style={[styles.subtitle, { color: mutedColor }]}>
+            {sections.length === 0
+              ? 'No sections yet'
+              : `${sections.length} section${sections.length !== 1 ? 's' : ''} · tap to view content`}
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: primaryColor }]}
+            onPress={() => {
+              if (Platform.OS !== 'web') triggerHaptic('selection')
+              setShowSectionForm(true)
+            }}
+          >
+            <IconSymbol name="plus" size={20} color="#fff" />
+            <ThemedText style={styles.addButtonLabel}>Add section</ThemedText>
+          </TouchableOpacity>
+        </View>
 
         {loading ? (
           <View style={styles.loading}>
@@ -153,7 +208,10 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 24 },
   sectionLabel: { fontSize: 13, marginBottom: 4 },
   screenTitle: { fontSize: 22, fontWeight: '600', marginBottom: 8 },
-  subtitle: { fontSize: 14, marginBottom: 20 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  subtitle: { fontSize: 14, flex: 1 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
+  addButtonLabel: { color: '#fff', fontSize: 13, fontWeight: '600' },
   loading: { alignItems: 'center', paddingVertical: 32 },
   list: { gap: 12 },
   row: {

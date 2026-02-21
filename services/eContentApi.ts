@@ -237,6 +237,7 @@ const ENDPOINT = '/v1/teacher/e-content'
 const TEACHER_CONTENT_BASE = '/v1/teacher/content'
 const CHAPTER_ENDPOINT = '/v1/teacher/chapters'
 const SECTION_ENDPOINT = '/v1/teacher/sections'
+const IMAGE_UPLOAD_PATH = '/v1/image'
 
 // Get institution ID from storage
 const getInstitutionId = async (): Promise<string | null> => {
@@ -248,6 +249,60 @@ const getInstitutionId = async (): Promise<string | null> => {
 const getBatchId = async (): Promise<string | null> => {
   const userData = await storage.getUserData()
   return userData?.runningBatchId || null
+}
+
+/**
+ * Upload a file to the same endpoint as admin portal (S3 via /v1/image).
+ * Returns the file URL to store in content.contentUrl.
+ * Uses fetch() and web/native FormData handling like uploadAssignmentAttachment.
+ */
+export const uploadContentFile = async (
+  file: { uri: string; name: string; type: string },
+  institutionId?: string | null,
+): Promise<string | null> => {
+  try {
+    const token = await storage.getToken()
+    const instId = institutionId ?? (await getInstitutionId())
+    const formData = new FormData()
+
+    const isWeb = typeof file.uri === 'string' && (file.uri.startsWith('blob:') || file.uri.startsWith('data:'))
+
+    if (isWeb) {
+      const response = await fetch(file.uri)
+      const blob = await response.blob()
+      const fileObj = new File([blob], file.name || 'file', {
+        type: file.type || 'application/octet-stream',
+      })
+      formData.append('file', fileObj)
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'file',
+        type: file.type || 'application/octet-stream',
+      } as any)
+    }
+    if (instId) formData.append('institutionId', instId)
+
+    const uploadResponse = await fetch(`${api.defaults.baseURL}${IMAGE_UPLOAD_PATH}`, {
+      method: 'POST',
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+      body: formData,
+    })
+
+    if (!uploadResponse.ok) {
+      console.error('Upload content file failed:', uploadResponse.status, await uploadResponse.text())
+      return null
+    }
+
+    const data = (await uploadResponse.json()) as ApiResponse<string> & { responseObject?: string; message?: string }
+    const url = data?.responseObject ?? data?.message
+    return url && typeof url === 'string' ? url : null
+  } catch (e) {
+    console.error('Upload content file failed:', e)
+    return null
+  }
 }
 
 // ==================== RESPONSE TYPES ====================
@@ -285,13 +340,19 @@ export const createChapter = async (
 ): Promise<ApiResponse<Chapter> | null> => {
   const institutionId = await getInstitutionId()
   const batchId = await getBatchId()
-  if (!institutionId || !batchId) return null
+  if (!institutionId || !batchId) {
+    throw new Error('Institution or batch is not set. Please update your profile or settings and try again.')
+  }
 
   const res: ApiResponse<Chapter> | null = await api.post(CHAPTER_ENDPOINT, {
     ...payload,
     institutionId,
     batchId,
   })
+  if (res && (res as ApiResponse<Chapter> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<Chapter> & { errorMessage?: string }).errorMessage || (res as ApiResponse<Chapter> & { message?: string }).message
+    throw new Error(msg || 'Failed to create chapter')
+  }
   return res
 }
 
@@ -304,6 +365,10 @@ export const updateChapter = async (
     `${CHAPTER_ENDPOINT}/${chapterId}`,
     payload,
   )
+  if (res && (res as ApiResponse<Chapter> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<Chapter> & { errorMessage?: string }).errorMessage || (res as ApiResponse<Chapter> & { message?: string }).message
+    throw new Error(msg || 'Failed to update chapter')
+  }
   return res
 }
 
@@ -355,12 +420,18 @@ export const createSection = async (
   payload: SectionPayload,
 ): Promise<ApiResponse<ContentSection> | null> => {
   const institutionId = await getInstitutionId()
-  if (!institutionId) return null
+  if (!institutionId) {
+    throw new Error('Institution is not set. Please update your profile or settings and try again.')
+  }
 
   const res: ApiResponse<ContentSection> | null = await api.post(SECTION_ENDPOINT, {
     ...payload,
     institutionId,
   })
+  if (res && (res as ApiResponse<ContentSection> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<ContentSection> & { errorMessage?: string }).errorMessage || (res as ApiResponse<ContentSection> & { message?: string }).message
+    throw new Error(msg || 'Failed to create section')
+  }
   return res
 }
 
@@ -373,6 +444,10 @@ export const updateSection = async (
     `${SECTION_ENDPOINT}/${sectionId}`,
     payload,
   )
+  if (res && (res as ApiResponse<ContentSection> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<ContentSection> & { errorMessage?: string }).errorMessage || (res as ApiResponse<ContentSection> & { message?: string }).message
+    throw new Error(msg || 'Failed to update section')
+  }
   return res
 }
 
@@ -537,67 +612,121 @@ export const uploadEContent = async (
   return res
 }
 
-// Create content without file (for NOTES, LINK types)
-export const createContent = async (
-  payload: ContentPayload,
-): Promise<ApiResponse<EContent> | null> => {
-  const institutionId = await getInstitutionId()
-  if (!institutionId) return null
+/**
+ * Build content payload for teacher/content API (same shape as admin portal).
+ * Adds staffId, teacherName, postedDate from storage when not provided.
+ */
+export interface SubjectContentPayload {
+  id?: string
+  title: string
+  description?: string
+  content?: string
+  contentType: ContentType
+  contentUrl?: string
+  status?: ContentStatus
+  sectionId: string
+  chapterId: string
+  subjectId: string
+  subjectName: string
+  courseId?: string
+  courseName?: string
+  year?: string
+  classId?: string
+  className?: string
+  staffId?: string
+  teacherName?: string
+  userName?: string
+  postedDate?: string
+  dueDate?: string
+  maxMarks?: number
+  assignmentInstructions?: string
+}
 
-  const res: ApiResponse<EContent> | null = await api.post(
-    ENDPOINT,
-    { ...payload, institutionId },
-    {
-      params: { institutionId },
-    },
-  )
+// Create content (POST /v1/teacher/content – same as admin portal)
+export const createContent = async (
+  payload: SubjectContentPayload,
+): Promise<ApiResponse<EContent> | null> => {
+  const userData = await storage.getUserData()
+  const staffId = payload.staffId ?? (userData?.staffDetails as { id?: string })?.id ?? userData?.id
+  const sd = userData?.staffDetails as { firstName?: string; lastName?: string } | undefined
+  const nameFromStaff =
+    sd
+      ? [sd.firstName ?? '', sd.lastName ?? ''].filter(Boolean).join(' ').trim() || (userData?.username ?? '')
+      : (userData?.username ?? '')
+  const teacherName = payload.teacherName ?? nameFromStaff
+  const postedDate = payload.postedDate ?? new Date().toISOString().split('T')[0]
+  const body = {
+    ...payload,
+    classId: payload.classId ?? payload.courseId,
+    className: payload.className ?? payload.courseName,
+    staffId: staffId ?? undefined,
+    teacherName: teacherName || undefined,
+    postedDate,
+    active: true,
+  }
+  const res: ApiResponse<EContent> | null = await api.post(TEACHER_CONTENT_BASE, body)
+  if (res && (res as ApiResponse<EContent> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<EContent> & { errorMessage?: string }).errorMessage || (res as ApiResponse<EContent> & { message?: string }).message
+    throw new Error(msg || 'Failed to create content')
+  }
   return res
 }
 
-// Update e-content metadata
+// Update content (PUT /v1/teacher/content with body including id – same as admin portal)
+export const updateContent = async (
+  payload: SubjectContentPayload & { id: string },
+): Promise<ApiResponse<EContent> | null> => {
+  const res: ApiResponse<EContent> | null = await api.put(TEACHER_CONTENT_BASE, payload)
+  if (res && (res as ApiResponse<EContent> & { error?: boolean }).error) {
+    const msg = (res as ApiResponse<EContent> & { errorMessage?: string }).errorMessage || (res as ApiResponse<EContent> & { message?: string }).message
+    throw new Error(msg || 'Failed to update content')
+  }
+  return res
+}
+
+// Legacy alias for update (teacher/content)
 export const updateEContent = async (
   contentId: string,
-  payload: Partial<EContentUploadMetadata>,
+  payload: Partial<SubjectContentPayload>,
 ): Promise<ApiResponse<EContent> | null> => {
-  const res: ApiResponse<EContent> | null = await api.put(`${ENDPOINT}/${contentId}`, payload)
-  return res
+  return updateContent({ ...payload, id: contentId } as SubjectContentPayload & { id: string })
 }
 
-// Delete e-content
+// Delete content (uses teacher/content when backend supports it)
 export const deleteEContent = async (contentId: string): Promise<ApiResponse<boolean> | null> => {
-  const res: ApiResponse<boolean> | null = await api.delete(`${ENDPOINT}/${contentId}`)
+  const res: ApiResponse<boolean> | null = await api.delete(`${TEACHER_CONTENT_BASE}/${contentId}`)
   return res
 }
 
-// Publish content
+// Publish content (PUT /v1/teacher/content/{id}/publish – same as portal)
 export const publishContent = async (contentId: string): Promise<ApiResponse<EContent> | null> => {
-  const res: ApiResponse<EContent> | null = await api.put(`${ENDPOINT}/${contentId}/publish`)
+  const res: ApiResponse<EContent> | null = await api.put(`${TEACHER_CONTENT_BASE}/${contentId}/publish`)
   return res
 }
 
-// Unpublish content
+// Unpublish content (PUT /v1/teacher/content/{id}/unpublish – same as portal)
 export const unpublishContent = async (
   contentId: string,
 ): Promise<ApiResponse<EContent> | null> => {
-  const res: ApiResponse<EContent> | null = await api.put(`${ENDPOINT}/${contentId}/unpublish`)
+  const res: ApiResponse<EContent> | null = await api.put(`${TEACHER_CONTENT_BASE}/${contentId}/unpublish`)
   return res
 }
 
-// Reorder content within section
+// Reorder content (PUT /v1/teacher/content/reorder – same as portal)
 export const reorderContent = async (
   contentIds: string[],
 ): Promise<ApiResponse<EContent[]> | null> => {
-  const res: ApiResponse<EContent[]> | null = await api.put(`${ENDPOINT}/reorder`, { contentIds })
+  const res: ApiResponse<EContent[]> | null = await api.put(`${TEACHER_CONTENT_BASE}/reorder`, { contentIds })
   return res
 }
 
-// Move content to different section
+// Move content (PUT /v1/teacher/content/{id}/move – same as portal)
 export const moveContent = async (
   contentId: string,
   targetSectionId: string,
   newSequence?: number,
 ): Promise<ApiResponse<EContent> | null> => {
-  const res: ApiResponse<EContent> | null = await api.put(`${ENDPOINT}/${contentId}/move`, {
+  const res: ApiResponse<EContent> | null = await api.put(`${TEACHER_CONTENT_BASE}/${contentId}/move`, {
     sectionId: targetSectionId,
     newSequence,
   })
@@ -774,12 +903,11 @@ export const getSubjectsByClass = async (
   return res
 }
 
-// Batch ID for courses endpoint
-const BATCH_ID = '695578f3c4f60d1cafc9ab03'
-
-// Get list of courses for the batch
+// Get list of courses for the teacher's current batch
 export const getCourses = async () => {
-  const res: CoursesResponse | null = await api.get(`/v1/course/batch/${BATCH_ID}`)
+  const batchId = await getBatchId()
+  if (!batchId) return null
+  const res: CoursesResponse | null = await api.get(`/v1/course/batch/${batchId}`)
   return res
 }
 

@@ -471,6 +471,8 @@ export interface StaffSubjectItem {
   section?: string
   subjectId?: string
   subjectName?: string
+  /** Subject code (e.g. MGT101) for display; from Subject.subCode. */
+  subjectCode?: string
   className?: string
   classId?: string
   skillName?: string
@@ -480,6 +482,13 @@ export interface StaffSubjectItem {
 export const getMySubjects = async (): Promise<StaffSubjectItem[] | null> => {
   const res = (await api.get('/v1/app/staff/subjects')) as ApiResponse<StaffSubjectItem[]> | null
   return res?.responseObject ?? null
+}
+
+/** Current running batch for the staff's institution (same as portal's running batch). Call to sync runningBatchId without re-login. */
+export const getRunningBatch = async (): Promise<string | null> => {
+  const res = (await api.get('/v1/app/staff/running-batch')) as ApiResponse<{ runningBatchId?: string }> | null
+  const obj = res?.responseObject
+  return obj && typeof obj === 'object' && typeof obj.runningBatchId === 'string' ? obj.runningBatchId : null
 }
 
 /** Staff payroll summary for payslips list. */
