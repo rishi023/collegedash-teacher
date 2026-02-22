@@ -1,6 +1,8 @@
 import { useThemeColor } from '@/hooks/useThemeColor'
+import { getViewableUrl } from '@/services/fileCache'
+import { getAuthToken } from '@/services/axios'
 import { useLocalSearchParams } from 'expo-router'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -13,12 +15,18 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function ImageViewerScreen() {
   const params = useLocalSearchParams<{ url: string; title?: string }>()
   const url = (params.url ?? '').trim()
+  const [displayUrl, setDisplayUrl] = useState(url)
 
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
 
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!url) return
+    getViewableUrl(url, { getAuthToken }).then(setDisplayUrl)
+  }, [url])
 
   if (!url) {
     return (
@@ -35,7 +43,7 @@ export default function ImageViewerScreen() {
       <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
         <View style={styles.imageWrap}>
           <img
-            src={url}
+            src={displayUrl}
             alt="Attachment"
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
             onLoad={() => setLoading(false)}
@@ -55,7 +63,7 @@ export default function ImageViewerScreen() {
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
       <View style={styles.imageWrap}>
         <Image
-          source={{ uri: url }}
+          source={{ uri: displayUrl }}
           style={styles.image}
           resizeMode="contain"
           onLoadStart={() => setLoading(true)}

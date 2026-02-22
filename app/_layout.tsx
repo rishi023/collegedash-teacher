@@ -19,11 +19,17 @@ import { useColorScheme } from '@/hooks/useColorScheme'
 
 function LayoutContent() {
   const colorScheme = useColorScheme()
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, setRedirectToLoginOnSessionExpiry } = useAuth()
   const segments = useSegments()
   const router = useRouter()
   const [onboardingChecked, setOnboardingChecked] = React.useState(false)
   const [hasSeenOnboarding, setHasSeenOnboarding] = React.useState(true)
+
+  // When session expires (e.g. 401), redirect to login
+  useEffect(() => {
+    setRedirectToLoginOnSessionExpiry(() => () => router.replace('/login'))
+    return () => setRedirectToLoginOnSessionExpiry(null)
+  }, [router, setRedirectToLoginOnSessionExpiry])
 
   React.useEffect(() => {
     import('@/services/storage').then(({ storage }) => {
@@ -61,6 +67,7 @@ function LayoutContent() {
       return
     }
     if (segments[0] === 'onboarding') return
+    if (segments[0] === 'access-unavailable') return
 
     const onLoginScreen = segments[0] === 'login'
     const onIndexOrRoot = segments[0] === 'index' || segments.length <= 0
@@ -124,6 +131,7 @@ function LayoutContent() {
       <Stack screenOptions={stackScreenOptions}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="access-unavailable" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="self-attendance" options={screenOptions('Self Attendance')} />

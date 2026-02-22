@@ -7,6 +7,13 @@ import {
   unpublishContent,
   type EContent,
 } from '@/services/eContentApi'
+import { getViewableUrl } from '@/services/fileCache'
+import { getDownloadPath } from '@/services/downloadStorage'
+import { downloadPdf } from '@/services/downloadPdf'
+import { getAuthToken } from '@/services/axios'
+import { useBottomSheet } from '@/contexts/BottomSheetContext'
+import { IconSymbol } from '@/components/ui/IconSymbol'
+import { triggerHaptic } from '@/utils/haptics'
 import { useLocalSearchParams } from 'expo-router'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -131,11 +138,51 @@ export default function EContentViewerScreen() {
     (contentType === 'pdf' ||
       (contentUrl ? (contentUrl.split('?')[0]?.toLowerCase() ?? '').endsWith('.pdf') : false))
 
+  const [displayUrl, setDisplayUrl] = useState(contentUrl)
+  const [localPath, setLocalPath] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const { showAlert } = useBottomSheet()
+
+  useEffect(() => {
+    if (contentUrl && (isPdf || !isVideo)) {
+      getViewableUrl(contentUrl, { getAuthToken }).then(setDisplayUrl)
+    } else {
+      setDisplayUrl(contentUrl)
+    }
+  }, [contentUrl, isPdf, isVideo])
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !contentUrl || !isPdf) return
+    getDownloadPath(contentUrl).then(setLocalPath)
+  }, [contentUrl, isPdf])
+
+  const handleDownload = useCallback(async () => {
+    if (Platform.OS === 'web' || !contentUrl || !isPdf || downloading) return
+    triggerHaptic('light')
+    setDownloading(true)
+    try {
+      const localUri = await downloadPdf(contentUrl, contentItem?.title, getAuthToken)
+      if (localUri) {
+        setLocalPath(localUri)
+        showAlert('Downloaded', 'PDF saved. You can open it from this screen anytime.')
+      } else {
+        showAlert('Error', 'Could not download PDF. Please try again.')
+      }
+    } finally {
+      setDownloading(false)
+    }
+  }, [contentUrl, contentItem?.title, isPdf, downloading, showAlert])
+
   const videoEmbedUrl = contentUrl && isVideo ? getEmbedVideoUrl(contentUrl) : null
+  const urlForView = displayUrl || contentUrl
   const viewerUrl =
     contentUrl && isPdf
-      ? `https://docs.google.com/viewer?url=${encodeURIComponent(contentUrl)}&embedded=true`
+      ? urlForView.startsWith('blob:')
+        ? urlForView
+        : `https://docs.google.com/viewer?url=${encodeURIComponent(urlForView)}&embedded=true`
       : contentUrl
+        ? urlForView
+        : ''
 
   const isDark = useThemeColor({}, 'text') === '#e5e5e5' || useThemeColor({}, 'text') === '#e5e7eb'
   const bodyStyle = isDark
@@ -152,11 +199,12 @@ export default function EContentViewerScreen() {
     ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0" /><style>*{margin:0;padding:0} html,body{width:100%;height:100%;background:#000} .w{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;padding:8px} .w iframe{width:100%;height:100%;border:none}</style></head><body><div class="w"><iframe src="${videoEmbedUrl.replace(/"/g, '&quot;')}" allowfullscreen></iframe></div></body></html>`
     : null
 
+  const nativePdfUri = Platform.OS !== 'web' && contentUrl && isPdf && localPath ? localPath : null
   const source = useMemo(() => {
     if (videoEmbedHtml && isVideo) return { html: videoEmbedHtml, baseUrl: 'https://app.local/' }
-    if (viewerUrl) return { uri: viewerUrl }
+    if (viewerUrl) return { uri: nativePdfUri || viewerUrl }
     return { html: htmlContent, baseUrl: 'https://app.local/' }
-  }, [videoEmbedHtml, isVideo, viewerUrl, htmlContent])
+  }, [videoEmbedHtml, isVideo, viewerUrl, htmlContent, nativePdfUri])
 
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -318,6 +366,21 @@ export default function EContentViewerScreen() {
           )}
         </TouchableOpacity>
       </View>
+      {isPdf && (
+        <View style={[styles.pdfToolbar, { backgroundColor: cardBg }]}>
+          <TouchableOpacity
+            style={[styles.pdfToolbarButton, { backgroundColor: primaryColor }]}
+            onPress={handleDownload}
+            disabled={downloading}
+          >
+            {downloading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <IconSymbol name="arrow.down.doc.fill" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
       <WebViewNative
         source={source}
         style={styles.webview}
@@ -329,7 +392,7 @@ export default function EContentViewerScreen() {
             <ActivityIndicator size="large" color={primaryColor} />
           </View>
         )}
-        originWhitelist={['*']}
+        originWhitelist={['*', 'file://']}
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
@@ -365,6 +428,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   publishBarButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  pdfToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  pdfToolbarButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
   webWrap: { flex: 1, minHeight: 400, position: 'relative' },
   contentLoader: {
     position: 'absolute',

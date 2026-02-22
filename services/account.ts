@@ -1,4 +1,5 @@
-import { api, ApiResponse } from './axios'
+import { api, ApiResponse, getAuthToken } from './axios'
+import { setCachedFile } from './fileCache'
 import { storage } from './storage'
 
 interface LoginPayload {
@@ -70,7 +71,10 @@ type StudentDetailsResponse = ApiResponse<StudentDetails>
 type StudentProfile = Omit<StudentDetails, 'studentInfo'> & StudentInfo
 
 export const signIn = async (payload: LoginPayload) => {
-  const res: LoginResponse | null = await api.post('/auth/signin', payload)
+  const res: LoginResponse | null = await api.post('/auth/signin', {
+    ...payload,
+    clientType: 'TEACHER_APP',
+  })
   return res
 }
 
@@ -131,15 +135,17 @@ export const uploadAssignmentAttachment = async (
   file: { uri: string; name: string; type: string },
 ): Promise<string | null> => {
   try {
-    const token = await storage.getToken()
+    const token = await getAuthToken()
     const formData = new FormData()
 
     const isWeb = file.uri.startsWith('blob:') || file.uri.startsWith('data:')
+    let blobToCache: Blob | null = null
 
     if (isWeb) {
       // Web: fetch the blob and convert to File object
       const response = await fetch(file.uri)
       const blob = await response.blob()
+      blobToCache = blob
       const fileObj = new File([blob], file.name || 'attachment', {
         type: file.type || 'application/octet-stream',
       })
@@ -166,7 +172,11 @@ export const uploadAssignmentAttachment = async (
     }
 
     const data: ApiResponse<string> = await uploadResponse.json()
-    return data?.responseObject ?? null
+    const uploadedUrl = data?.responseObject ?? null
+    if (uploadedUrl && blobToCache) {
+      setCachedFile(uploadedUrl, blobToCache)
+    }
+    return uploadedUrl
   } catch {
     return null
   }
@@ -359,7 +369,7 @@ export const getStaffProfile = async (): Promise<StaffProfile | null> => {
 /** Upload profile photo. Accepts a File (web) or { uri, name, type } (native). Returns the new image URL. */
 export const uploadProfilePhoto = async (file: File | { uri: string; name: string; type: string }): Promise<string | null> => {
   try {
-    const token = await storage.getToken()
+    const token = await getAuthToken()
     const formData = new FormData()
 
     if (file instanceof File) {
@@ -484,9 +494,16 @@ export const getMySubjects = async (): Promise<StaffSubjectItem[] | null> => {
   return res?.responseObject ?? null
 }
 
-/** Current running batch for the staff's institution (same as portal's running batch). Call to sync runningBatchId without re-login. */
-export const getRunningBatch = async (): Promise<string | null> => {
-  const res = (await api.get('/v1/app/staff/running-batch')) as ApiResponse<{ runningBatchId?: string }> | null
+/** Current running batch for the staff's institution (same as portal's running batch). Call to sync runningBatchId without re-login.
+ * Pass optionalToken when calling immediately after login to avoid race with storage (request interceptor may read token before it's persisted). */
+export const getRunningBatch = async (optionalToken?: string | null): Promise<string | null> => {
+  const headers =
+    optionalToken != null && optionalToken !== ''
+      ? { Authorization: `Bearer ${optionalToken}` }
+      : undefined
+  const res = (await api.get('/v1/app/staff/running-batch', { headers })) as ApiResponse<{
+    runningBatchId?: string
+  }> | null
   const obj = res?.responseObject
   return obj && typeof obj === 'object' && typeof obj.runningBatchId === 'string' ? obj.runningBatchId : null
 }
@@ -537,6 +554,7 @@ export interface TimetableSlotItem {
   period: number
   startTime: string
   endTime: string
+  slotType?: 'LECTURE' | 'NO_LECTURE' | 'LUNCH_BREAK'
   subjectId?: string
   subjectName?: string
   staffId?: string
@@ -551,6 +569,17 @@ export interface TimetableSlotItem {
 export const getMyTimetable = async (batchId: string): Promise<TimetableSlotItem[] | null> => {
   const res = await api.get<ApiResponse<TimetableSlotItem[]>>('/v1/app/staff/timetable', {
     params: { batchId },
+  })
+  return (res as ApiResponse<TimetableSlotItem[]> | null)?.responseObject ?? null
+}
+
+/** Full timetable for a course (all years/sections) — only published. */
+export const getTimetableForCourse = async (
+  batchId: string,
+  courseId: string
+): Promise<TimetableSlotItem[] | null> => {
+  const res = await api.get<ApiResponse<TimetableSlotItem[]>>('/v1/app/staff/timetable/course', {
+    params: { batchId, courseId },
   })
   return (res as ApiResponse<TimetableSlotItem[]> | null)?.responseObject ?? null
 }

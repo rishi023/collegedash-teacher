@@ -1,4 +1,4 @@
-import { api, ApiResponse } from './axios'
+import { api, ApiResponse, getAuthToken } from './axios'
 import { storage } from './storage'
 
 // ==================== ENUMS ====================
@@ -261,15 +261,17 @@ export const uploadContentFile = async (
   institutionId?: string | null,
 ): Promise<string | null> => {
   try {
-    const token = await storage.getToken()
+    const token = await getAuthToken()
     const instId = institutionId ?? (await getInstitutionId())
     const formData = new FormData()
 
     const isWeb = typeof file.uri === 'string' && (file.uri.startsWith('blob:') || file.uri.startsWith('data:'))
+    let blobToCache: Blob | null = null
 
     if (isWeb) {
       const response = await fetch(file.uri)
       const blob = await response.blob()
+      blobToCache = blob
       const fileObj = new File([blob], file.name || 'file', {
         type: file.type || 'application/octet-stream',
       })
@@ -298,7 +300,12 @@ export const uploadContentFile = async (
 
     const data = (await uploadResponse.json()) as ApiResponse<string> & { responseObject?: string; message?: string }
     const url = data?.responseObject ?? data?.message
-    return url && typeof url === 'string' ? url : null
+    const uploadedUrl = url && typeof url === 'string' ? url : null
+    if (uploadedUrl && blobToCache) {
+      const { setCachedFile } = await import('./fileCache')
+      setCachedFile(uploadedUrl, blobToCache)
+    }
+    return uploadedUrl
   } catch (e) {
     console.error('Upload content file failed:', e)
     return null
@@ -310,26 +317,39 @@ type ChaptersResponse = ApiResponse<Chapter[]>
 type SectionsResponse = ApiResponse<ContentSection[]>
 type ContentsResponse = ApiResponse<EContent[]>
 type ContentStructureResponse = ApiResponse<ContentStructure>
+/** Backend returns list of one subject for GET /content/structure. */
+type ContentStructureListResponse = ApiResponse<ContentStructure[]>
 type CoursesResponse = ApiResponse<CourseOption[]>
 type YearsResponse = ApiResponse<YearOption[]>
 type SubjectsResponse = ApiResponse<SubjectByCourseOption[]>
 
 // ==================== CHAPTER APIS ====================
 
-/** Params for getChapters (must match backend ChapterController: courseId, year, subjectId; section optional). */
+/** Params for getChapters (must match backend ChapterController and admin portal). */
 export interface GetChaptersParams {
   courseId: string
   year: string
   subjectId: string
   section?: string
+  /** Optional; sent by admin portal for fallback lookup. Teacher app may pass when available. */
+  batchId?: string
+  /** Optional; sent by admin portal for fallback when courseId differs. */
+  courseName?: string
 }
 
 /** Get all chapters for a subject (course/year/section). Matches admin portal and backend ChapterController. */
 export const getChapters = async (params: GetChaptersParams): Promise<ChaptersResponse | null> => {
-  const { courseId, year, subjectId, section } = params
+  const { courseId, year, subjectId, section, batchId, courseName } = params
   if (!courseId?.trim() || !year?.trim() || !subjectId?.trim()) return null
   const res: ChaptersResponse | null = await api.get(CHAPTER_ENDPOINT, {
-    params: { courseId, year, subjectId, ...(section?.trim() && { section: section.trim() }) },
+    params: {
+      courseId,
+      year,
+      subjectId,
+      ...(section?.trim() && { section: section.trim() }),
+      ...(batchId?.trim() && { batchId: batchId.trim() }),
+      ...(courseName?.trim() && { courseName: courseName.trim() }),
+    },
   })
   return res
 }
@@ -545,14 +565,30 @@ export const getContentBySection = async (sectionId: string): Promise<ContentsRe
   return res
 }
 
-// Get full content structure (hierarchical)
-export const getContentStructure = async (subjectId: string) => {
-  const institutionId = await getInstitutionId()
-  const batchId = await getBatchId()
-  if (!institutionId || !batchId) return null
+/** Params for getContentStructure (must match backend GET /api/v1/teacher/content/structure). */
+export interface GetContentStructureParams {
+  courseId: string
+  year: string
+  subjectId: string
+  section?: string
+  structureOnly?: boolean
+}
 
-  const res: ContentStructureResponse | null = await api.get(`${ENDPOINT}/structure`, {
-    params: { institutionId, batchId, subjectId },
+/** Get full content structure for one subject (chapters → sections → content). Uses same API as admin portal. Returns array of one subject. */
+export const getContentStructure = async (
+  params: GetContentStructureParams,
+): Promise<ContentStructureListResponse | null> => {
+  const { courseId, year, subjectId, section, structureOnly } = params
+  if (!courseId?.trim() || !year?.trim() || !subjectId?.trim()) return null
+
+  const res: ContentStructureListResponse | null = await api.get(`${TEACHER_CONTENT_BASE}/structure`, {
+    params: {
+      courseId,
+      year,
+      subjectId,
+      ...(section?.trim() && { section: section.trim() }),
+      ...(structureOnly !== undefined && { structureOnly }),
+    },
   })
   return res
 }

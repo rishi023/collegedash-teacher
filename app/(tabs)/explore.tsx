@@ -269,7 +269,7 @@ export default function MoreScreen() {
         <View style={styles.header}>
           <ThemedText style={[styles.headerTitle, { color: textColor }]}>More</ThemedText>
           <ThemedText style={[styles.headerSubtitle, { color: mutedColor }]}>
-            Hello, {user?.staffDetails?.firstName || user?.firstName || 'Staff'}!
+            Hello, {user?.firstName || user?.staffDetails?.firstName || 'Staff'}!
           </ThemedText>
         </View>
 

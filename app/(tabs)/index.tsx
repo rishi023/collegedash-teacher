@@ -3,7 +3,7 @@ import { ThemedText } from '@/components/ThemedText'
 import { IconSymbol, IconSymbolName } from '@/components/ui/IconSymbol'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { Href, router } from 'expo-router'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Dimensions,
   Platform,
@@ -20,9 +20,11 @@ import { getCardShadow } from '@/constants/Material'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   getDashboardSummary,
+  getMyTimetable,
   type Announcement,
   type NewsItem,
   type SubjectContentSummary,
+  type TimetableSlotItem,
 } from '@/services/account'
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
@@ -61,6 +63,48 @@ interface Action {
 
 const { width } = Dimensions.get('window')
 
+const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAY_LABELS: Record<string, string> = {
+  MONDAY: 'Monday',
+  TUESDAY: 'Tuesday',
+  WEDNESDAY: 'Wednesday',
+  THURSDAY: 'Thursday',
+  FRIDAY: 'Friday',
+  SATURDAY: 'Saturday',
+}
+function parseTime(t: string): number {
+  const [h, m] = (t || '00:00').split(':').map(Number)
+  return (h ?? 0) * 60 + (m ?? 0)
+}
+function getUpcomingSlot(slots: TimetableSlotItem[], todayKey: string, nowMinutes: number): TimetableSlotItem | null {
+  const sorted = [...slots].sort((a, b) => {
+    const dayA = DAY_ORDER.indexOf(a.dayOfWeek)
+    const dayB = DAY_ORDER.indexOf(b.dayOfWeek)
+    if (dayA !== dayB) return dayA - dayB
+    return parseTime(a.startTime ?? '') - parseTime(b.startTime ?? '')
+  })
+  for (const slot of sorted) {
+    const dayIdx = DAY_ORDER.indexOf(slot.dayOfWeek)
+    const todayIdx = DAY_ORDER.indexOf(todayKey)
+    const slotStart = parseTime(slot.startTime ?? '')
+    if (dayIdx > todayIdx) return slot
+    if (dayIdx === todayIdx && slotStart > nowMinutes) return slot
+  }
+  return null
+}
+function getSlotLabel(slot: TimetableSlotItem): string {
+  if (slot.slotType === 'LUNCH_BREAK') return 'Lunch'
+  if (slot.slotType === 'NO_LECTURE') return 'No lecture'
+  return slot.subjectName ?? '–'
+}
+function getClassLabel(slot: TimetableSlotItem): string {
+  const parts = [slot.courseName, slot.year, slot.section].filter(Boolean)
+  return parts.join(' · ') || '–'
+}
+function getSubjectColor(_subject: string): string {
+  return '#06b6d4'
+}
+
 function staffDisplayName(staff: { firstName?: string; lastNme?: string } | null): string {
   if (!staff) return 'Staff'
   const first = staff.firstName ?? ''
@@ -73,8 +117,10 @@ export default function DashboardScreen() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [newsItems, setNewsItems] = useState<NewsItem[]>([])
   const [recentContent, setRecentContent] = useState<SubjectContentSummary[]>([])
+  const [timetableSlots, setTimetableSlots] = useState<TimetableSlotItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const batchId = user?.runningBatchId ?? ''
 
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -93,7 +139,10 @@ export default function DashboardScreen() {
     }
     try {
       setIsLoading(true)
-      const summary = await getDashboardSummary()
+      const [summary, slots] = await Promise.all([
+        getDashboardSummary(),
+        batchId ? getMyTimetable(batchId).then((s) => s ?? []) : Promise.resolve([]),
+      ])
       if (summary) {
         setAnnouncements(summary.recentAnnouncements ?? [])
         setNewsItems(summary.recentNews ?? [])
@@ -103,20 +152,34 @@ export default function DashboardScreen() {
         setNewsItems([])
         setRecentContent([])
       }
+      setTimetableSlots(slots)
     } catch (error) {
       console.error('Error fetching dashboard:', error)
       setAnnouncements([])
       setNewsItems([])
       setRecentContent([])
+      setTimetableSlots([])
     } finally {
       setIsLoading(false)
       setRefreshing(false)
     }
-  }, [user?.staffDetails?.institutionId])
+  }, [user?.staffDetails?.institutionId, batchId])
 
   useEffect(() => {
     fetchDashboard()
   }, [fetchDashboard])
+
+  const { dayKey: todayKey, minutes: nowMinutes } = useMemo(() => {
+    const d = new Date()
+    const dayNum = d.getDay()
+    const dayKey = dayNum === 0 ? 'SATURDAY' : DAY_ORDER[dayNum - 1]
+    const minutes = d.getHours() * 60 + d.getMinutes()
+    return { dayKey, minutes }
+  }, [])
+  const nextLectureSlot = useMemo(
+    () => getUpcomingSlot(timetableSlots, todayKey, nowMinutes),
+    [timetableSlots, todayKey, nowMinutes]
+  )
 
   const quickActions: Action[] = [
     {
@@ -160,7 +223,7 @@ export default function DashboardScreen() {
               Welcome back,
             </ThemedText>
             <ThemedText style={[styles.staffName, { color: textColor }]}>
-              {staffDisplayName(user?.staffDetails) || user?.firstName || 'Staff'}
+              {user?.firstName || user?.staffDetails?.firstName || staffDisplayName(user?.staffDetails) || 'Staff'}
             </ThemedText>
             <ThemedText style={[styles.roleInfo, { color: mutedColor }]}>
               {user?.staffDetails?.role || 'Staff'} {user?.staffDetails?.empCode ? `• ${user.staffDetails.empCode}` : ''}
@@ -185,6 +248,28 @@ export default function DashboardScreen() {
             <ThemedText style={[styles.statLabel, { color: mutedColor }]}>Average Grade</ThemedText>
           </View>
         </View> */}
+
+        {nextLectureSlot && (
+          <TouchableOpacity
+            style={[styles.nextLectureCard, { backgroundColor: primaryColor + '15', borderColor: primaryColor + '40' }]}
+            onPress={() => router.push('/timetable')}
+            activeOpacity={0.8}
+          >
+            <ThemedText style={[styles.nextLectureTitle, { color: primaryColor }]}>Next lecture</ThemedText>
+            <View style={[styles.nextLectureInner, { backgroundColor: cardBackground }]}>
+              <View style={[styles.nextLecturePeriod, { backgroundColor: getSubjectColor(getSlotLabel(nextLectureSlot)) }]}>
+                <ThemedText style={styles.nextLecturePeriodText}>{nextLectureSlot.period}</ThemedText>
+              </View>
+              <View style={styles.nextLectureContent}>
+                <ThemedText style={[styles.nextLectureSubject, { color: textColor }]}>{getSlotLabel(nextLectureSlot)}</ThemedText>
+                <ThemedText style={[styles.nextLectureClass, { color: mutedColor }]}>{getClassLabel(nextLectureSlot)}</ThemedText>
+                <ThemedText style={[styles.nextLectureMeta, { color: mutedColor }]}>
+                  {nextLectureSlot.room ?? '–'} · {DAY_LABELS[nextLectureSlot.dayOfWeek]} · {nextLectureSlot.startTime} – {nextLectureSlot.endTime}
+                </ThemedText>
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.quickActionsContainer}>
           <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Quick Actions</ThemedText>
@@ -514,6 +599,38 @@ const styles = StyleSheet.create({
   // statLabel: {
   //   fontSize: 12,
   // },
+  nextLectureCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  nextLectureTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  nextLectureInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    padding: 12,
+    gap: 12,
+  },
+  nextLecturePeriod: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextLecturePeriodText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  nextLectureContent: { flex: 1, minWidth: 0 },
+  nextLectureSubject: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
+  nextLectureClass: { fontSize: 12, marginBottom: 2 },
+  nextLectureMeta: { fontSize: 12 },
   quickActionsContainer: {
     padding: 20,
   },

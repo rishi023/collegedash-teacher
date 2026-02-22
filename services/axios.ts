@@ -23,8 +23,31 @@ export interface ApiResponse<T = unknown> {
 // Global logout callback
 let globalLogoutCallback: (() => void) | null = null
 
+/** Token set immediately after login so first requests have it before storage persists. Cleared on logout. */
+let latestToken: string | null = null
+
 export const setLogoutCallback = (callback: () => void) => {
   globalLogoutCallback = callback
+}
+
+/** Set token so it is sent on every request. Updates in-memory cache and axios default headers (so every request gets it even if interceptor runs late). */
+export const setLatestToken = (token: string | null) => {
+  latestToken = token
+  if (api.defaults?.headers) {
+    const common = api.defaults.headers.common as Record<string, string>
+    if (token) {
+      common['Authorization'] = `Bearer ${token}`
+    } else {
+      delete common['Authorization']
+    }
+  }
+}
+
+/** Single source of truth for auth token: storage first, then in-memory (for use by interceptors and fetch() calls). */
+export const getAuthToken = async (): Promise<string | null> => {
+  const fromStorage = await storage.getToken()
+  if (fromStorage) return fromStorage
+  return latestToken
 }
 
 // axios custom instance
@@ -38,24 +61,38 @@ const api = axios.create({
 })
 
 const handleRequest = async (config: InternalAxiosRequestConfig) => {
-  const accessToken = await storage.getToken()
+  // So super-admin engagement metrics can attribute actions to Teacher App
+  config.headers = config.headers ?? {}
+  ;(config.headers as Record<string, string>)['X-Client-Type'] = 'TEACHER_APP'
 
+  const existingAuth =
+    config.headers?.Authorization ?? config.headers?.authorization
+  if (existingAuth) return config
+  const accessToken = await getAuthToken()
   if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`
+    const headers = { ...config.headers, Authorization: `Bearer ${accessToken}` }
+    config.headers = headers as InternalAxiosRequestConfig['headers']
+    const common = api.defaults?.headers?.common as Record<string, string>
+    if (common) common['Authorization'] = `Bearer ${accessToken}`
+    latestToken = accessToken
   }
-
   return config
 }
 
-const handleResponseSuccess = (res: AxiosResponse) => {
-  if (res?.data && !res.data.error) {
-    return res.data
+const handleResponseSuccess = async (res: AxiosResponse) => {
+  const data = res?.data
+  if (!data) return null
+
+  // User disabled by institution – clear session and redirect to login
+  if (data.userDisabled === true) {
+    await storage.clearAuthData()
+    if (globalLogoutCallback) globalLogoutCallback()
+    return null
   }
 
-  console.log('error in API nw')
-  //   const errorMessage = res?.data?.errorMessage;
-  //   bus.emit('API_ERROR', { message: errorMessage });
+  if (!data.error) return data
 
+  console.log('error in API nw')
   return null
 }
 
@@ -64,10 +101,14 @@ api.interceptors.request.use(handleRequest, error => Promise.reject(error))
 api.interceptors.response.use(handleResponseSuccess, async error => {
   const UNAUTHORIZED = 401
   if (error?.response?.status === UNAUTHORIZED) {
-    // Clear auth data and trigger logout
-    await storage.clearAuthData()
-    if (globalLogoutCallback) {
-      globalLogoutCallback()
+    const hadAuth =
+      !!(error?.config?.headers?.Authorization ?? error?.config?.headers?.authorization)
+    if (hadAuth) {
+      setLatestToken(null)
+      await storage.clearAuthData()
+      if (globalLogoutCallback) {
+        globalLogoutCallback()
+      }
     }
     return null
   }
@@ -103,5 +144,10 @@ type TypedApiClient = {
 }
 
 const typedApi = api as unknown as TypedApiClient
+
+// Hydrate token from storage as soon as this module loads so default header is set before any request
+storage.getToken().then((t) => {
+  if (t) setLatestToken(t)
+})
 
 export { typedApi as api, axios }

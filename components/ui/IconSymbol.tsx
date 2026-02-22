@@ -64,6 +64,9 @@ const MAPPING = {
   'camera.fill': 'camera-alt',
   'plus': 'add',
   'folder.fill': 'folder',
+  'eye.fill': 'visibility',
+  'eye.slash.fill': 'visibility-off',
+  'arrow.down.doc.fill': 'file-download',
 } as IconMapping;
 
 /**

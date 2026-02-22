@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/ThemedText'
 import { APP_INFO } from '@/constants'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, StudentUseAppError } from '@/contexts/AuthContext'
+import { useBottomSheet } from '@/contexts/BottomSheetContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
 import { router } from 'expo-router'
 import { useState } from 'react'
@@ -8,6 +9,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,19 +18,46 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { IconSymbol } from '@/components/ui/IconSymbol'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+const PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.collegedash.student.app&hl=en_IN'
+const APP_STORE_URL = 'https://apps.apple.com/app/collegedash-student/id1667269212'
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
+  const { showConfirm } = useBottomSheet()
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
   const textColor = useThemeColor({}, 'text')
   const mutedColor = useThemeColor({}, 'muted')
   const borderColor = useThemeColor({}, 'inputBorder')
   const inputBg = useThemeColor({}, 'inputBackground')
+
+  const showStudentAppPopup = () => {
+    const downloadUrl = Platform.OS === 'ios' ? APP_STORE_URL : PLAY_STORE_URL
+    showConfirm({
+      title: 'Use the Student App',
+      message:
+        'Your account is for students. Please download the CollegeDash Student app and sign in there to access your dashboard, attendance, fees, and more.',
+      buttons: [
+        {
+          text: 'Close',
+          style: 'cancel',
+          onPress: () => {},
+        },
+        {
+          text: 'Download App',
+          onPress: () => Linking.openURL(downloadUrl),
+        },
+      ],
+    })
+  }
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -41,9 +70,23 @@ export default function LoginScreen() {
     try {
       await login(email, password)
       router.replace('/(tabs)')
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(error)
-      Alert.alert('Error', 'Invalid credentials. Please try again.')
+      const isStudentUseApp =
+        error instanceof StudentUseAppError || (error as any)?.code === 'STUDENT_USE_APP'
+      if (isStudentUseApp) {
+        showStudentAppPopup()
+        return
+      }
+      const message =
+        error instanceof Error ? error.message : 'Invalid credentials. Please try again.'
+      const isReachOutToAdmin =
+        typeof message === 'string' && message.toLowerCase().includes('reach out to administrator')
+      if (isReachOutToAdmin) {
+        router.replace('/access-unavailable')
+        return
+      }
+      Alert.alert('Error', message)
     } finally {
       setIsLoading(false)
     }
@@ -86,17 +129,31 @@ export default function LoginScreen() {
 
               <View style={styles.inputContainer}>
                 <ThemedText style={[styles.label, { color: textColor }]}>Password</ThemedText>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { backgroundColor: inputBg, borderColor, color: textColor },
-                  ]}
-                  placeholder="Enter your password"
-                  placeholderTextColor={mutedColor}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.passwordInput,
+                      { backgroundColor: inputBg, borderColor, color: textColor },
+                    ]}
+                    placeholder="Enter your password"
+                    placeholderTextColor={mutedColor}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword((p) => !p)}
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <IconSymbol
+                      name={showPassword ? 'eye.slash.fill' : 'eye.fill'}
+                      size={22}
+                      color={mutedColor}
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -169,6 +226,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
+  },
+  passwordRow: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   loginButton: {
     borderRadius: 8,
