@@ -4,7 +4,12 @@ import { IconSymbol } from '@/components/ui/IconSymbol'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBottomSheet } from '@/contexts/BottomSheetContext'
 import { useThemeColor } from '@/hooks/useThemeColor'
-import { getAnnouncements, Announcement } from '@/services/account'
+import {
+  getAnnouncements,
+  getCollegeAnnouncementsForStaff,
+  type Announcement,
+  type CollegeAnnouncement,
+} from '@/services/account'
 import { triggerHaptic } from '@/utils/haptics'
 import { useRouter } from 'expo-router'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -64,8 +69,12 @@ export default function AnnouncementsScreen() {
   const [loadingMoreNotices, setLoadingMoreNotices] = useState(false)
   const [loadingMoreAnnouncements, setLoadingMoreAnnouncements] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [collegeAnnouncements, setCollegeAnnouncements] = useState<CollegeAnnouncement[]>([])
+  const [loadingCollegeAnnouncements, setLoadingCollegeAnnouncements] = useState(true)
 
   const institutionId = user?.staffDetails?.institutionId
+  const batchId = user?.runningBatchId
+  const staffId = user?.staffDetails?.id
 
   const fetchNotices = useCallback(
     async (page: number, append: boolean) => {
@@ -142,6 +151,27 @@ export default function AnnouncementsScreen() {
     }
   }, [institutionId, fetchAnnouncements])
 
+  const fetchCollegeAnnouncements = useCallback(async () => {
+    if (!institutionId || !batchId || !staffId) {
+      setLoadingCollegeAnnouncements(false)
+      return
+    }
+    try {
+      setLoadingCollegeAnnouncements(true)
+      const list = await getCollegeAnnouncementsForStaff(institutionId, batchId, staffId)
+      setCollegeAnnouncements(list)
+    } catch (e) {
+      console.error(e)
+      setCollegeAnnouncements([])
+    } finally {
+      setLoadingCollegeAnnouncements(false)
+    }
+  }, [institutionId, batchId, staffId])
+
+  useEffect(() => {
+    fetchCollegeAnnouncements()
+  }, [fetchCollegeAnnouncements])
+
   const onRefresh = useCallback(() => {
     setRefreshing(true)
     setNoticesPage(0)
@@ -149,8 +179,9 @@ export default function AnnouncementsScreen() {
     Promise.all([
       institutionId ? fetchNotices(0, false) : Promise.resolve(),
       institutionId ? fetchAnnouncements(0, false) : Promise.resolve(),
+      fetchCollegeAnnouncements(),
     ]).finally(() => setRefreshing(false))
-  }, [institutionId, fetchNotices, fetchAnnouncements])
+  }, [institutionId, fetchNotices, fetchAnnouncements, fetchCollegeAnnouncements])
 
   const loadMoreNotices = () => {
     const next = noticesPage + 1
@@ -213,6 +244,22 @@ export default function AnnouncementsScreen() {
         type: a.type ?? 'NOTICE',
         contentUrls: JSON.stringify(a.contentUrls ?? []),
         imageUrls: JSON.stringify(a.imageUrls ?? []),
+      },
+    })
+  }
+
+  const openCollegeDetail = (a: CollegeAnnouncement) => {
+    if (Platform.OS !== 'web') triggerHaptic('selection')
+    router.push({
+      pathname: '/announcement-detail',
+      params: {
+        id: a.id,
+        title: a.header ?? '',
+        description: a.description ?? '',
+        postedOn: a.date ?? '',
+        type: 'NOTICE',
+        contentUrls: JSON.stringify(a.contentUrls ?? []),
+        imageUrls: JSON.stringify([]),
       },
     })
   }
@@ -298,6 +345,22 @@ export default function AnnouncementsScreen() {
 
   const hasNotices = notices.length > 0
   const hasAnnouncements = announcements.length > 0
+  const hasCollege = collegeAnnouncements.length > 0
+
+  const getCollegeFirstImageUrl = (a: CollegeAnnouncement): string | null => {
+    const urls = a.contentUrls ?? []
+    for (const url of urls) {
+      const path = (url.split('?')[0] ?? '').toLowerCase()
+      if (IMAGE_EXTENSIONS.some((ext) => path.endsWith(ext))) return url
+    }
+    return null
+  }
+
+  const hasCollegePdf = (a: CollegeAnnouncement): boolean => {
+    const urls = [...(a.contentUrls ?? [])]
+    if (a.contentUrl && !urls.includes(a.contentUrl)) urls.unshift(a.contentUrl)
+    return urls.some((u) => (u?.split('?')[0] ?? '').toLowerCase().endsWith('.pdf'))
+  }
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor }]}>
@@ -312,6 +375,79 @@ export default function AnnouncementsScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.section}>
+          <SectionHeader title="Internal Announcements" />
+          {loadingCollegeAnnouncements && collegeAnnouncements.length === 0 ? (
+            <View style={[styles.card, styles.loadingCard, { backgroundColor: cardBackground }]}>
+              <ActivityIndicator size="small" color={primaryColor} />
+              <ThemedText style={[styles.loadingText, { color: mutedColor }]}>
+                Loading internal announcements...
+              </ThemedText>
+            </View>
+          ) : !hasCollege ? (
+            <View style={[styles.emptyBlock, { backgroundColor: cardBackground, borderColor }]}>
+              <IconSymbol name="megaphone.fill" size={32} color={mutedColor} />
+              <ThemedText style={[styles.emptyBlockText, { color: mutedColor }]}>
+                No internal announcements yet
+              </ThemedText>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {collegeAnnouncements.map((a) => {
+                const imageUrl = getCollegeFirstImageUrl(a)
+                return (
+                  <Pressable
+                    key={a.id}
+                    style={({ pressed }) => [
+                      styles.card,
+                      { backgroundColor: cardBackground, borderColor },
+                      getElevation(1),
+                      pressed && styles.cardPressed,
+                    ]}
+                    onPress={() => openCollegeDetail(a)}
+                    android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+                  >
+                    {imageUrl ? (
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.cardImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.cardImagePlaceholder, { backgroundColor: `${mutedColor}20` }]}>
+                        <IconSymbol
+                          name={hasCollegePdf(a) ? 'doc.fill' : 'megaphone.fill'}
+                          size={28}
+                          color={mutedColor}
+                        />
+                      </View>
+                    )}
+                    <View style={styles.cardMain}>
+                      <ThemedText style={[styles.cardDate, { color: mutedColor }]}>
+                        {a.date ? formatDate(a.date) : ''}
+                      </ThemedText>
+                      <ThemedText style={[styles.cardTitle, { color: textColor }]} numberOfLines={2}>
+                        {a.header}
+                      </ThemedText>
+                      {a.description ? (
+                        <ThemedText
+                          style={[styles.cardSnippet, { color: mutedColor }]}
+                          numberOfLines={2}
+                        >
+                          {a.description}
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                    <View style={styles.chevronWrap}>
+                      <IconSymbol name="chevron.right" size={20} color={mutedColor} />
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </View>
+          )}
+        </View>
+
         <View ref={noticesRef} style={styles.section}>
           <SectionHeader title="Notices" />
           {loadingNotices && notices.length === 0 ? (

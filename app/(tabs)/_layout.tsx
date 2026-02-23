@@ -1,6 +1,7 @@
 import { Tabs, useRouter } from 'expo-router'
 import React, { useState } from 'react'
 import { Image, Platform, Pressable, StyleSheet, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppHeader } from '@/components/AppHeader'
 import { ThemedText } from '@/components/ThemedText'
@@ -41,9 +42,13 @@ function HeaderAvatar() {
   )
 }
 
+const TAB_BAR_VERTICAL_PADDING = Platform.OS === 'ios' ? 24 : 8
+
 export default function TabLayout() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const insets = useSafeAreaInsets()
+  const bottomInset = Math.max(insets.bottom, TAB_BAR_VERTICAL_PADDING)
 
   return (
     <Tabs
@@ -66,7 +71,11 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarStyle: [
           styles.tabBar,
-          { backgroundColor: colors.card },
+          {
+            backgroundColor: colors.card,
+            height: BOTTOM_NAV_HEIGHT + bottomInset,
+            paddingBottom: bottomInset,
+          },
           getElevation(8),
         ],
         tabBarItemStyle: { paddingVertical: 8 },
@@ -99,8 +108,6 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: BOTTOM_NAV_HEIGHT + (Platform.OS === 'ios' ? 24 : 8),
-    paddingBottom: Platform.OS === 'ios' ? 24 : 8,
     paddingTop: 8,
     borderTopWidth: 0,
   },

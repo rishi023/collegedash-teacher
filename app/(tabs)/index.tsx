@@ -21,7 +21,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   getDashboardSummary,
   getMyTimetable,
+  getCollegeAnnouncementsForStaff,
   type Announcement,
+  type CollegeAnnouncement,
   type NewsItem,
   type SubjectContentSummary,
   type TimetableSlotItem,
@@ -42,6 +44,21 @@ function getFirstImageUrl(a: Announcement): string | null {
 function getFirstNewsImageUrl(item: NewsItem): string | null {
   if (item.imageUrl) return item.imageUrl
   return item.imageUrls?.length ? item.imageUrls[0] : null
+}
+
+function getCollegeFirstImageUrl(a: CollegeAnnouncement): string | null {
+  const urls = a.contentUrls ?? []
+  for (const url of urls) {
+    const path = (url.split('?')[0] ?? '').toLowerCase()
+    if (IMAGE_EXTENSIONS.some((ext) => path.endsWith(ext))) return url
+  }
+  return null
+}
+
+function hasCollegePdf(a: CollegeAnnouncement): boolean {
+  const urls = [...(a.contentUrls ?? [])]
+  if (a.contentUrl && !urls.includes(a.contentUrl)) urls.unshift(a.contentUrl)
+  return urls.some((u) => (u?.split('?')[0] ?? '').toLowerCase().endsWith('.pdf'))
 }
 
 function stripNewsHtml(html: string | undefined, maxLength = 80): string {
@@ -115,12 +132,15 @@ function staffDisplayName(staff: { firstName?: string; lastNme?: string } | null
 export default function DashboardScreen() {
   const { user } = useAuth()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [internalAnnouncements, setInternalAnnouncements] = useState<CollegeAnnouncement[]>([])
   const [newsItems, setNewsItems] = useState<NewsItem[]>([])
   const [recentContent, setRecentContent] = useState<SubjectContentSummary[]>([])
   const [timetableSlots, setTimetableSlots] = useState<TimetableSlotItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const batchId = user?.runningBatchId ?? ''
+  const institutionId = user?.staffDetails?.institutionId
+  const staffId = user?.staffDetails?.id
 
   const backgroundColor = useThemeColor({}, 'secondary')
   const primaryColor = useThemeColor({}, 'primary')
@@ -139,9 +159,12 @@ export default function DashboardScreen() {
     }
     try {
       setIsLoading(true)
-      const [summary, slots] = await Promise.all([
+      const [summary, slots, internalList] = await Promise.all([
         getDashboardSummary(),
         batchId ? getMyTimetable(batchId).then((s) => s ?? []) : Promise.resolve([]),
+        institutionId && batchId && staffId
+          ? getCollegeAnnouncementsForStaff(institutionId, batchId, staffId).catch(() => [])
+          : Promise.resolve([]),
       ])
       if (summary) {
         setAnnouncements(summary.recentAnnouncements ?? [])
@@ -152,18 +175,20 @@ export default function DashboardScreen() {
         setNewsItems([])
         setRecentContent([])
       }
+      setInternalAnnouncements(internalList ?? [])
       setTimetableSlots(slots)
     } catch (error) {
       console.error('Error fetching dashboard:', error)
       setAnnouncements([])
-      setNewsItems([])
-      setRecentContent([])
+        setNewsItems([])
+        setRecentContent([])
+        setInternalAnnouncements([])
       setTimetableSlots([])
     } finally {
       setIsLoading(false)
       setRefreshing(false)
     }
-  }, [user?.staffDetails?.institutionId, batchId])
+  }, [user?.staffDetails?.institutionId, batchId, institutionId, staffId])
 
   useEffect(() => {
     fetchDashboard()
@@ -425,13 +450,90 @@ export default function DashboardScreen() {
 
         <View style={styles.announcementsContainer}>
           <SectionHeader
+            title="Internal Announcements"
+            right={
+              <TouchableOpacity onPress={() => router.push('/announcements')} hitSlop={12}>
+                <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+              </TouchableOpacity>
+            }
+          />
+          {isLoading ? (
+            <View style={[styles.announcementCard, { backgroundColor: cardBackground }]}>
+              <ActivityIndicator size="small" color={primaryColor} />
+              <ThemedText style={[styles.loadingText, { color: mutedColor }]}>Loading…</ThemedText>
+            </View>
+          ) : internalAnnouncements.length > 0 ? (
+            <View style={styles.announcementList}>
+              {internalAnnouncements.slice(0, 3).map((a) => {
+                const imageUrl = getCollegeFirstImageUrl(a)
+                return (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[styles.announcementCard, { backgroundColor: cardBackground }]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/announcement-detail',
+                        params: {
+                          id: a.id,
+                          title: a.header ?? '',
+                          description: a.description ?? '',
+                          postedOn: a.date ?? '',
+                          type: 'NOTICE',
+                          contentUrls: JSON.stringify(a.contentUrls ?? []),
+                          imageUrls: JSON.stringify([]),
+                        },
+                      })
+                    }
+                    activeOpacity={0.8}
+                  >
+                    {imageUrl ? (
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.announcementCardImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.announcementCardImagePlaceholder, { backgroundColor: `${mutedColor}18` }]}>
+                        <IconSymbol
+                          name={hasCollegePdf(a) ? 'doc.fill' : 'megaphone.fill'}
+                          size={28}
+                          color={mutedColor}
+                        />
+                      </View>
+                    )}
+                    <View style={styles.announcementCardContent}>
+                      <ThemedText style={[styles.announcementTitle, { color: textColor }]} numberOfLines={2}>
+                        {a.header}
+                      </ThemedText>
+                      {a.description ? (
+                        <ThemedText style={[styles.announcementMessage, { color: mutedColor }]} numberOfLines={2}>
+                          {a.description}
+                        </ThemedText>
+                      ) : null}
+                      <ThemedText style={[styles.announcementDate, { color: mutedColor }]}>
+                        {a.date ? new Date(a.date).toLocaleDateString() : ''}
+                      </ThemedText>
+                    </View>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
+          ) : (
+            <View style={[styles.emptyStateCard, { backgroundColor: cardBackground }]}>
+              <ThemedText style={[styles.noDataText, { color: mutedColor }]}>
+                No internal announcements
+              </ThemedText>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.announcementsContainer}>
+          <SectionHeader
             title="Notices & Announcements"
             right={
-              announcements.length > 0 ? (
-                <TouchableOpacity onPress={() => router.push('/announcements')} hitSlop={12}>
-                  <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
-                </TouchableOpacity>
-              ) : undefined
+              <TouchableOpacity onPress={() => router.push('/announcements')} hitSlop={12}>
+                <ThemedText style={[styles.viewAllText, { color: primaryColor }]}>View all</ThemedText>
+              </TouchableOpacity>
             }
           />
           {isLoading ? (

@@ -173,6 +173,12 @@ export default function MoreScreen() {
 
   const quickActions: Action[] = [
     {
+      title: 'Notices & Announcements',
+      icon: 'bell.badge.fill',
+      color: '#3b82f6',
+      route: '/announcements',
+    },
+    {
       title: 'Self Attendance',
       icon: 'checkmark.circle.fill',
       color: '#10b981',

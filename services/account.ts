@@ -270,6 +270,33 @@ export const getAnnouncements = async (
   return res
 }
 
+/** Internal (college) announcements sent from admin portal – for staff by institution, batch, staffId. */
+export interface CollegeAnnouncement {
+  id: string
+  header: string
+  description: string
+  footer?: string
+  date: string
+  contentUrl?: string
+  contentUrls?: string[]
+}
+
+type CollegeAnnouncementListResponse = ApiResponse<CollegeAnnouncement[]>
+
+export const getCollegeAnnouncementsForStaff = async (
+  institutionId: string,
+  batchId: string,
+  staffId: string,
+  startDate?: string,
+  endDate?: string
+) => {
+  const res: CollegeAnnouncementListResponse | null = await api.get(
+    `/v1/announcement/institution/${institutionId}/batch/${batchId}/staff/${staffId}`,
+    { params: { startDate, endDate } }
+  )
+  return res?.responseObject ?? []
+}
+
 interface ChangePasswordPayload {
   oldPassword: string
   newPassword: string
@@ -390,7 +417,7 @@ export const uploadProfilePhoto = async (file: File | { uri: string; name: strin
 
     if (!res.ok) return null
     const data = await res.json()
-    return data?.message ?? null
+    return data?.responseObject ?? data?.message ?? null
   } catch {
     return null
   }

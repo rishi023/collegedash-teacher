@@ -67,6 +67,8 @@ const MAPPING = {
   'eye.fill': 'visibility',
   'eye.slash.fill': 'visibility-off',
   'arrow.down.doc.fill': 'file-download',
+  'doc.fill': 'picture-as-pdf',
+  'megaphone.fill': 'campaign',
 } as IconMapping;
 
 /**
