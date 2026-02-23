@@ -52,8 +52,7 @@ export const getAuthToken = async (): Promise<string | null> => {
 
 // axios custom instance
 const api = axios.create({
-  // baseURL: process.env.API_BASE ?? 'https://multi-prod-api.studyaid.in/api',
-  baseURL: process.env.API_BASE ?? 'http://127.0.0.1:8000/api',
+  baseURL: process.env.EXPO_PUBLIC_API_URL,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -65,8 +64,7 @@ const handleRequest = async (config: InternalAxiosRequestConfig) => {
   config.headers = config.headers ?? {}
   ;(config.headers as Record<string, string>)['X-Client-Type'] = 'TEACHER_APP'
 
-  const existingAuth =
-    config.headers?.Authorization ?? config.headers?.authorization
+  const existingAuth = config.headers?.Authorization ?? config.headers?.authorization
   if (existingAuth) return config
   const accessToken = await getAuthToken()
   if (accessToken) {
@@ -101,8 +99,9 @@ api.interceptors.request.use(handleRequest, error => Promise.reject(error))
 api.interceptors.response.use(handleResponseSuccess, async error => {
   const UNAUTHORIZED = 401
   if (error?.response?.status === UNAUTHORIZED) {
-    const hadAuth =
-      !!(error?.config?.headers?.Authorization ?? error?.config?.headers?.authorization)
+    const hadAuth = !!(
+      error?.config?.headers?.Authorization ?? error?.config?.headers?.authorization
+    )
     if (hadAuth) {
       setLatestToken(null)
       await storage.clearAuthData()
@@ -146,7 +145,7 @@ type TypedApiClient = {
 const typedApi = api as unknown as TypedApiClient
 
 // Hydrate token from storage as soon as this module loads so default header is set before any request
-storage.getToken().then((t) => {
+storage.getToken().then(t => {
   if (t) setLatestToken(t)
 })
 
